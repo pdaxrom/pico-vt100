@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+project_dir="$(cd "$script_dir/.." && pwd)"
+
+python3 "$project_dir/tools/png_to_logo.py" "$1" --raw "$script_dir/logo.raw" --header "$project_dir/src/logo.h"
