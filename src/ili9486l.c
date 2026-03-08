@@ -449,18 +449,20 @@ void ili9486l_fill_screen(lcd_color_t color) {
 }
 
 void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
-  uint8_t rows[7];
+  const uint8_t *glyph;
 
   if (scale == 0 || x >= g_width || y >= g_height) {
     return;
   }
 
-  font5x7_get_rows(c, rows);
+  glyph = font5x7_get_glyph(c);
   ili9486l_fill_rect(x, y, (uint16_t)(6u * scale), (uint16_t)(8u * scale), bg);
 
-  for (uint8_t row = 0; row < 7; ++row) {
-    for (uint8_t col = 0; col < 5; ++col) {
-      if ((rows[row] & (1u << (4u - col))) != 0u) {
+  for (uint8_t col = 0; col < FONT5X7_WIDTH; ++col) {
+    const uint8_t column_bits = glyph[col];
+
+    for (uint8_t row = 0; row < FONT5X7_HEIGHT; ++row) {
+      if ((column_bits & (1u << row)) != 0u) {
         ili9486l_fill_rect((uint16_t)(x + col * scale), (uint16_t)(y + row * scale), scale, scale, fg);
       }
     }

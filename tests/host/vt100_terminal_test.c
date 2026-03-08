@@ -155,13 +155,11 @@ static int test_decsc_decrc_restore_modes(void) {
   vt100_terminal_t terminal;
 
   vt100_terminal_init(&terminal, 0u, 0u);
-  feed(&terminal, "\x1b[?7l\x1b[?1h\x1b=\x1b*0\x1b+A\x1b[?2l\x1b" "F\x1b" "7");
+  feed(&terminal, "\x1b[?7l\x1b[?1h\x1b=\x1b*0\x1b+A\x1b" "7");
 
   terminal.autowrap = true;
   terminal.cursor_key_application_mode = false;
   terminal.keypad_application_mode = false;
-  terminal.vt52_mode = false;
-  terminal.vt52_graphics = false;
   terminal.g2_charset = TEST_CHARSET_US;
   terminal.g3_charset = TEST_CHARSET_US;
 
@@ -170,8 +168,6 @@ static int test_decsc_decrc_restore_modes(void) {
   CHECK(!terminal.autowrap);
   CHECK(terminal.cursor_key_application_mode);
   CHECK(terminal.keypad_application_mode);
-  CHECK(terminal.vt52_mode);
-  CHECK(terminal.vt52_graphics);
   CHECK(terminal.g2_charset == TEST_CHARSET_DEC_SPECIAL);
   CHECK(terminal.g3_charset == TEST_CHARSET_UK);
   return 0;

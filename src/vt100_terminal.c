@@ -349,10 +349,10 @@ static void vt100_terminal_get_uk_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYP
     return;
   }
 
-  font5x7_get_rows((char)vt100_terminal_sanitize_char(ch), rows);
+  memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
 }
 
-static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
+static bool vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
   memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
 
   switch (ch) {
@@ -362,7 +362,7 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[3] = 0x1F;
       rows[4] = 0x0E;
       rows[5] = 0x04;
-      return;
+      return true;
     case 'a':
       rows[0] = 0x15;
       rows[1] = 0x0A;
@@ -371,43 +371,43 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x15;
       rows[5] = 0x0A;
       rows[6] = 0x15;
-      return;
+      return true;
     case 'f':
       rows[0] = 0x06;
       rows[1] = 0x09;
       rows[2] = 0x09;
       rows[3] = 0x06;
-      return;
+      return true;
     case 'g':
       rows[1] = 0x04;
       rows[2] = 0x1F;
       rows[3] = 0x04;
       rows[5] = 0x1F;
-      return;
+      return true;
     case 'j':
       rows[0] = 0x04;
       rows[1] = 0x04;
       rows[2] = 0x04;
       rows[3] = 0x1C;
-      return;
+      return true;
     case 'k':
       rows[3] = 0x1C;
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'l':
       rows[3] = 0x07;
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'm':
       rows[0] = 0x04;
       rows[1] = 0x04;
       rows[2] = 0x04;
       rows[3] = 0x07;
-      return;
+      return true;
     case 'n':
       rows[0] = 0x04;
       rows[1] = 0x04;
@@ -416,22 +416,22 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'o':
       rows[0] = 0x1F;
-      return;
+      return true;
     case 'p':
       rows[1] = 0x1F;
-      return;
+      return true;
     case 'q':
       rows[3] = 0x1F;
-      return;
+      return true;
     case 'r':
       rows[4] = 0x1F;
-      return;
+      return true;
     case 's':
       rows[6] = 0x1F;
-      return;
+      return true;
     case 't':
       rows[0] = 0x04;
       rows[1] = 0x04;
@@ -440,7 +440,7 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'u':
       rows[0] = 0x04;
       rows[1] = 0x04;
@@ -449,19 +449,19 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'v':
       rows[0] = 0x04;
       rows[1] = 0x04;
       rows[2] = 0x04;
       rows[3] = 0x1F;
-      return;
+      return true;
     case 'w':
       rows[3] = 0x1F;
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'x':
       rows[0] = 0x04;
       rows[1] = 0x04;
@@ -470,7 +470,7 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x04;
       rows[5] = 0x04;
       rows[6] = 0x04;
-      return;
+      return true;
     case 'y':
       rows[0] = 0x02;
       rows[1] = 0x04;
@@ -479,7 +479,7 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x08;
       rows[5] = 0x04;
       rows[6] = 0x1F;
-      return;
+      return true;
     case 'z':
       rows[0] = 0x08;
       rows[1] = 0x04;
@@ -488,7 +488,7 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x02;
       rows[5] = 0x04;
       rows[6] = 0x1F;
-      return;
+      return true;
     case '{':
       rows[0] = 0x1F;
       rows[1] = 0x04;
@@ -497,14 +497,14 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x04;
       rows[5] = 0x14;
       rows[6] = 0x08;
-      return;
+      return true;
     case '|':
       rows[1] = 0x01;
       rows[2] = 0x1F;
       rows[3] = 0x02;
       rows[4] = 0x1F;
       rows[5] = 0x10;
-      return;
+      return true;
     case '}':
       rows[0] = 0x0E;
       rows[1] = 0x11;
@@ -513,36 +513,42 @@ static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERM
       rows[4] = 0x10;
       rows[5] = 0x10;
       rows[6] = 0x1F;
-      return;
+      return true;
     case '~':
       rows[2] = 0x04;
       rows[3] = 0x0E;
       rows[4] = 0x0E;
       rows[5] = 0x04;
-      return;
+      return true;
     default:
-      font5x7_get_rows((char)vt100_terminal_sanitize_char(ch), rows);
-      return;
+      return false;
   }
 }
 
-static void vt100_terminal_get_glyph_rows(const vt100_terminal_cell_t *cell, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
+static const uint8_t *vt100_terminal_get_glyph_columns(const vt100_terminal_cell_t *cell, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT], bool *use_rows) {
   const char ch = (char)vt100_terminal_sanitize_char(cell->ch);
 
+  *use_rows = false;
   if (cell->charset == VT100_CHARSET_DEC_SPECIAL) {
-    vt100_terminal_get_dec_special_rows(ch, rows);
-    return;
+    if (vt100_terminal_get_dec_special_rows(ch, rows)) {
+      *use_rows = true;
+      return NULL;
+    }
+    return font5x7_get_glyph(ch);
   }
 
   if (cell->charset == VT100_CHARSET_UK) {
-    vt100_terminal_get_uk_rows(ch, rows);
-    return;
+    if (ch == '#') {
+      vt100_terminal_get_uk_rows(ch, rows);
+      *use_rows = true;
+      return NULL;
+    }
   }
 
-  font5x7_get_rows(ch, rows);
+  return font5x7_get_glyph(ch);
 }
 
-static bool vt100_terminal_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT], uint8_t px, uint8_t py) {
+static bool vt100_terminal_row_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT], uint8_t px, uint8_t py) {
   if (px >= VT100_TERMINAL_GLYPH_WIDTH) {
     return false;
   }
@@ -557,6 +563,23 @@ static bool vt100_terminal_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINA
   }
 
   return (glyph_rows[py] & (1u << (VT100_TERMINAL_GLYPH_WIDTH - 1u - px))) != 0u;
+}
+
+static bool vt100_terminal_column_glyph_pixel_on(const uint8_t *glyph_columns, uint8_t px, uint8_t py) {
+  if (glyph_columns == NULL || px >= VT100_TERMINAL_GLYPH_WIDTH) {
+    return false;
+  }
+
+  if (py < VT100_TERMINAL_GLYPH_Y_OFFSET) {
+    return false;
+  }
+
+  py = (uint8_t)(py - VT100_TERMINAL_GLYPH_Y_OFFSET);
+  if (py >= VT100_TERMINAL_GLYPH_HEIGHT) {
+    return false;
+  }
+
+  return (glyph_columns[px] & (1u << py)) != 0u;
 }
 
 static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, const vt100_terminal_cell_t *cell, bool invert, uint8_t fg[3], uint8_t bg[3]) {
@@ -594,16 +617,19 @@ static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, cons
 static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal, uint8_t row, uint8_t col, bool invert) {
   uint8_t cell_pixels[VT100_TERMINAL_CELL_WIDTH * VT100_TERMINAL_CELL_HEIGHT * 3u];
   uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
+  const uint8_t *glyph_columns;
+  bool use_rows;
   const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
   uint8_t fg[3];
   uint8_t bg[3];
 
-  vt100_terminal_get_glyph_rows(cell, glyph_rows);
+  glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
   vt100_terminal_resolve_colors(terminal, cell, invert, fg, bg);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
     for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
-      const bool pixel_on = vt100_terminal_glyph_pixel_on(glyph_rows, px, py) ||
+      const bool pixel_on = (use_rows ? vt100_terminal_row_glyph_pixel_on(glyph_rows, px, py)
+                                      : vt100_terminal_column_glyph_pixel_on(glyph_columns, px, py)) ||
                             (((cell->style & VT100_STYLE_UNDERLINE) != 0u) &&
                              py == (VT100_TERMINAL_CELL_HEIGHT - 1u) &&
                              px < VT100_TERMINAL_GLYPH_WIDTH);
@@ -643,17 +669,20 @@ static void vt100_terminal_show_cursor(vt100_terminal_t *terminal) {
 static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
   for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
     uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
+    const uint8_t *glyph_columns;
+    bool use_rows;
     const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
     uint8_t fg[3];
     uint8_t bg[3];
     const uint16_t cell_x = (uint16_t)(col * VT100_TERMINAL_CELL_WIDTH);
 
-    vt100_terminal_get_glyph_rows(cell, glyph_rows);
+    glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
     vt100_terminal_resolve_colors(terminal, cell, false, fg, bg);
 
     for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
       for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
-        const bool pixel_on = vt100_terminal_glyph_pixel_on(glyph_rows, px, py) ||
+        const bool pixel_on = (use_rows ? vt100_terminal_row_glyph_pixel_on(glyph_rows, px, py)
+                                        : vt100_terminal_column_glyph_pixel_on(glyph_columns, px, py)) ||
                               (((cell->style & VT100_STYLE_UNDERLINE) != 0u) &&
                                py == (VT100_TERMINAL_CELL_HEIGHT - 1u) &&
                                px < VT100_TERMINAL_GLYPH_WIDTH);
