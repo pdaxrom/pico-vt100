@@ -32,6 +32,7 @@ pico_sdk_init()
 
 add_executable(ili9486l_lcd
   src/font5x7.c
+  src/font5x7_row_masks.c
   src/ili9486l.c
   src/jpeg_logo.c
   src/logo_jpg.S

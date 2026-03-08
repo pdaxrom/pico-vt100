@@ -492,24 +492,8 @@ static void ili9486l_draw_char_slow(uint16_t x, uint16_t y, char c, lcd_color_t 
   }
 }
 
-static uint8_t ili9486l_glyph_row_mask(const uint8_t *glyph, uint8_t row) {
-  uint8_t mask = 0u;
-
-  if (glyph == NULL || row >= FONT5X7_HEIGHT) {
-    return 0u;
-  }
-
-  for (uint8_t col = 0; col < FONT5X7_WIDTH; ++col) {
-    if ((glyph[col] & (1u << row)) != 0u) {
-      mask |= (uint8_t)(1u << col);
-    }
-  }
-
-  return mask;
-}
-
 void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
-  const uint8_t *glyph;
+  const uint8_t *glyph_rows;
   const uint16_t glyph_w = (uint16_t)(6u * scale);
   const uint16_t glyph_h = (uint16_t)(8u * scale);
   uint8_t row_pixels[6u * ILI9486L_FAST_TEXT_SCALE_MAX * 3u];
@@ -520,7 +504,7 @@ void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_colo
     return;
   }
 
-  glyph = font5x7_get_glyph(c);
+  glyph_rows = font5x7_get_cell6x8_row_masks(c);
   if (scale > ILI9486L_FAST_TEXT_SCALE_MAX || (uint32_t)x + glyph_w > g_width || (uint32_t)y + glyph_h > g_height) {
     ili9486l_draw_char_slow(x, y, c, fg, bg, scale);
     return;
@@ -534,7 +518,7 @@ void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_colo
   }
 
   for (uint8_t glyph_row = 0; glyph_row < 8u; ++glyph_row) {
-    const uint8_t row_mask = ili9486l_glyph_row_mask(glyph, glyph_row);
+    const uint8_t row_mask = glyph_rows[glyph_row];
 
     for (uint8_t sy = 0; sy < scale; ++sy) {
       uint8_t *dst = row_pixels;

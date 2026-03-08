@@ -12,6 +12,7 @@ add_executable(vt100_terminal_tests
   ili9486l_stub.c
   vt100_terminal_test.c
   ../../src/font5x7.c
+  ../../src/font5x7_row_masks.c
   ../../src/vt100_terminal.c
 )
 

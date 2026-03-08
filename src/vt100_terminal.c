@@ -570,24 +570,34 @@ static void vt100_terminal_build_cell_row_masks(const vt100_terminal_cell_t *cel
   uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
   const uint8_t *glyph_columns;
   bool use_rows;
+  const uint8_t *builtin_rows = NULL;
+  const char ch = (char)vt100_terminal_sanitize_char(cell->ch);
 
-  memset(row_masks, 0, VT100_TERMINAL_CELL_HEIGHT);
-  glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
+  if (cell->charset == VT100_CHARSET_US || (cell->charset == VT100_CHARSET_UK && ch != '#')) {
+    builtin_rows = font5x7_get_cell6x9_row_masks(ch);
+  }
 
-  for (uint8_t glyph_row = 0; glyph_row < VT100_TERMINAL_GLYPH_HEIGHT; ++glyph_row) {
-    uint8_t mask = 0u;
+  if (builtin_rows != NULL) {
+    memcpy(row_masks, builtin_rows, VT100_TERMINAL_CELL_HEIGHT);
+  } else {
+    memset(row_masks, 0, VT100_TERMINAL_CELL_HEIGHT);
+    glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
 
-    if (use_rows) {
-      mask = vt100_terminal_pack_row_bits(glyph_rows[glyph_row]);
-    } else {
-      for (uint8_t px = 0; px < VT100_TERMINAL_GLYPH_WIDTH; ++px) {
-        if ((glyph_columns[px] & (1u << glyph_row)) != 0u) {
-          mask |= (uint8_t)(1u << px);
+    for (uint8_t glyph_row = 0; glyph_row < VT100_TERMINAL_GLYPH_HEIGHT; ++glyph_row) {
+      uint8_t mask = 0u;
+
+      if (use_rows) {
+        mask = vt100_terminal_pack_row_bits(glyph_rows[glyph_row]);
+      } else {
+        for (uint8_t px = 0; px < VT100_TERMINAL_GLYPH_WIDTH; ++px) {
+          if ((glyph_columns[px] & (1u << glyph_row)) != 0u) {
+            mask |= (uint8_t)(1u << px);
+          }
         }
       }
-    }
 
-    row_masks[VT100_TERMINAL_GLYPH_Y_OFFSET + glyph_row] = mask;
+      row_masks[VT100_TERMINAL_GLYPH_Y_OFFSET + glyph_row] = mask;
+    }
   }
 
   if ((cell->style & VT100_STYLE_UNDERLINE) != 0u) {
