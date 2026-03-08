@@ -1354,6 +1354,7 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->vt52_pending_row = 0u;
   terminal->csi_value = 0;
   terminal->autowrap = true;
+  terminal->saved_autowrap = terminal->autowrap;
   terminal->wrap_pending = false;
   terminal->saved_wrap_pending = terminal->wrap_pending;
   terminal->insert_mode = false;
@@ -1362,9 +1363,13 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->saved_origin_mode = terminal->origin_mode;
   terminal->screen_reverse = false;
   terminal->cursor_key_application_mode = false;
+  terminal->saved_cursor_key_application_mode = terminal->cursor_key_application_mode;
   terminal->keypad_application_mode = false;
+  terminal->saved_keypad_application_mode = terminal->keypad_application_mode;
   terminal->vt52_mode = false;
+  terminal->saved_vt52_mode = terminal->vt52_mode;
   terminal->vt52_graphics = false;
+  terminal->saved_vt52_graphics = terminal->vt52_graphics;
   terminal->single_shift_pending = false;
   terminal->last_printable_valid = false;
   vt100_terminal_reset_tab_stops(terminal);
@@ -1580,8 +1585,13 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->saved_g2_charset = terminal->g2_charset;
         terminal->saved_g3_charset = terminal->g3_charset;
         terminal->saved_gl_set = terminal->gl_set;
+        terminal->saved_autowrap = terminal->autowrap;
         terminal->saved_origin_mode = terminal->origin_mode;
         terminal->saved_wrap_pending = terminal->wrap_pending;
+        terminal->saved_cursor_key_application_mode = terminal->cursor_key_application_mode;
+        terminal->saved_keypad_application_mode = terminal->keypad_application_mode;
+        terminal->saved_vt52_mode = terminal->vt52_mode;
+        terminal->saved_vt52_graphics = terminal->vt52_graphics;
       } else if (ch == '8') {
         terminal->cursor_row = terminal->saved_row;
         terminal->cursor_col = terminal->saved_col;
@@ -1593,8 +1603,13 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->g2_charset = terminal->saved_g2_charset;
         terminal->g3_charset = terminal->saved_g3_charset;
         terminal->gl_set = terminal->saved_gl_set;
+        terminal->autowrap = terminal->saved_autowrap;
         terminal->origin_mode = terminal->saved_origin_mode;
         terminal->wrap_pending = terminal->saved_wrap_pending;
+        terminal->cursor_key_application_mode = terminal->saved_cursor_key_application_mode;
+        terminal->keypad_application_mode = terminal->saved_keypad_application_mode;
+        terminal->vt52_mode = terminal->saved_vt52_mode;
+        terminal->vt52_graphics = terminal->saved_vt52_graphics;
       } else if (ch == 'c') {
         vt100_terminal_reset(terminal);
         return;
@@ -1681,8 +1696,15 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
       break;
 
     case VT100_STATE_ESC_HASH:
-      if (ch == '8') {
-        vt100_terminal_alignment_display(terminal);
+      switch (ch) {
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+          break;
+        case '8':
+          vt100_terminal_alignment_display(terminal);
+          break;
       }
       terminal->state = VT100_STATE_GROUND;
       break;

@@ -151,6 +151,45 @@ static int test_decsc_decrc_restore_g2_g3(void) {
   return 0;
 }
 
+static int test_decsc_decrc_restore_modes(void) {
+  vt100_terminal_t terminal;
+
+  vt100_terminal_init(&terminal, 0u, 0u);
+  feed(&terminal, "\x1b[?7l\x1b[?1h\x1b=\x1b*0\x1b+A\x1b[?2l\x1b" "F\x1b" "7");
+
+  terminal.autowrap = true;
+  terminal.cursor_key_application_mode = false;
+  terminal.keypad_application_mode = false;
+  terminal.vt52_mode = false;
+  terminal.vt52_graphics = false;
+  terminal.g2_charset = TEST_CHARSET_US;
+  terminal.g3_charset = TEST_CHARSET_US;
+
+  feed(&terminal, "\x1b" "8");
+
+  CHECK(!terminal.autowrap);
+  CHECK(terminal.cursor_key_application_mode);
+  CHECK(terminal.keypad_application_mode);
+  CHECK(terminal.vt52_mode);
+  CHECK(terminal.vt52_graphics);
+  CHECK(terminal.g2_charset == TEST_CHARSET_DEC_SPECIAL);
+  CHECK(terminal.g3_charset == TEST_CHARSET_UK);
+  return 0;
+}
+
+static int test_esc_hash_3_to_6_are_noop(void) {
+  vt100_terminal_t terminal;
+
+  vt100_terminal_init(&terminal, 0u, 0u);
+  feed(&terminal, "A\x1b#3\x1b#4\x1b#5\x1b#6B");
+
+  CHECK(terminal.cells[0][0].ch == 'A');
+  CHECK(terminal.cells[0][1].ch == 'B');
+  CHECK(terminal.cursor_row == 0u);
+  CHECK(terminal.cursor_col == 2u);
+  return 0;
+}
+
 int main(void) {
   static const struct {
     const char *name;
@@ -163,6 +202,8 @@ int main(void) {
       {"vt52_cursoring_and_exit", test_vt52_cursoring_and_exit},
       {"single_shift_uses_g2_and_g3_once", test_single_shift_uses_g2_and_g3_once},
       {"decsc_decrc_restore_g2_g3", test_decsc_decrc_restore_g2_g3},
+      {"decsc_decrc_restore_modes", test_decsc_decrc_restore_modes},
+      {"esc_hash_3_to_6_are_noop", test_esc_hash_3_to_6_are_noop},
   };
 
   for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {

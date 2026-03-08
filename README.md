@@ -67,7 +67,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - печатные ASCII-символы
 - `CR`, `LF`, `BS`, `TAB`
 - `ESC 7`, `ESC 8`, `ESC c`, `ESC D`, `ESC E`, `ESC M`, `ESC Z`, `ESC =`, `ESC >`, `ESC N`, `ESC O`
-- `ESC #8` для `DECALN` (`screen alignment display`)
+- `ESC #3/#4/#5/#6` принимаются как safe no-op, `ESC #8` делает `DECALN` (`screen alignment display`)
 - `ESC H` для установки tab stop в текущей колонке
 - `ESC ( 0`, `ESC ( B`, `ESC ( A`, `ESC ) 0`, `ESC ) B`, `ESC ) A`, `ESC * 0/B/A`, `ESC + 0/B/A`, `SO`, `SI` для `DEC Special Graphics`, `UK charset`, `G0..G3`
 - `VT52`-совместимость через `CSI ?2l` / `ESC <` и команды `ESC A/B/C/D/F/G/H/I/J/K/Y/Z`
@@ -88,6 +88,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `ESC N` и `ESC O` делают single-shift на `G2` и `G3` соответственно для следующего печатного символа
 - `CAN` / `SUB` отменяют текущую escape-последовательность, `DEL` игнорируется
 - `CPR` (`CSI 6n`) учитывает `DECOM`: строка возвращается относительно scroll region, когда origin mode включён
+- `DECSC/DECRC` (`ESC 7` / `ESC 8`) сейчас сохраняют и восстанавливают не только курсор и атрибуты, но и charset/mode state (`G0..G3`, `DECAWM`, `DECOM`, `DECCKM`, keypad mode, `VT52`)
 
 Текущие требования:
 

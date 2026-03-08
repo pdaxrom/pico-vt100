@@ -60,6 +60,7 @@ typedef struct {
   uint16_t csi_value;
   bool cursor_visible;
   bool autowrap;
+  bool saved_autowrap;
   bool wrap_pending;
   bool saved_wrap_pending;
   bool insert_mode;
@@ -68,9 +69,13 @@ typedef struct {
   bool saved_origin_mode;
   bool screen_reverse;
   bool cursor_key_application_mode;
+  bool saved_cursor_key_application_mode;
   bool keypad_application_mode;
+  bool saved_keypad_application_mode;
   bool vt52_mode;
+  bool saved_vt52_mode;
   bool vt52_graphics;
+  bool saved_vt52_graphics;
   bool single_shift_pending;
   bool last_printable_valid;
   vt100_terminal_output_fn output_fn;
