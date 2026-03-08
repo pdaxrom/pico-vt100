@@ -66,15 +66,17 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 
 - печатные ASCII-символы
 - `CR`, `LF`, `BS`, `TAB`
-- `ESC 7`, `ESC 8`, `ESC c`, `ESC D`, `ESC E`, `ESC M`, `ESC Z`
+- `ESC 7`, `ESC 8`, `ESC c`, `ESC D`, `ESC E`, `ESC M`, `ESC Z`, `ESC =`, `ESC >`, `ESC N`, `ESC O`
 - `ESC #8` для `DECALN` (`screen alignment display`)
 - `ESC H` для установки tab stop в текущей колонке
 - `ESC ( 0`, `ESC ( B`, `ESC ( A`, `ESC ) 0`, `ESC ) B`, `ESC ) A`, `SO`, `SI` для `DEC Special Graphics` и `UK charset`
+- `VT52`-совместимость через `CSI ?2l` / `ESC <` и команды `ESC A/B/C/D/F/G/H/I/J/K/Y/Z`
 - `CSI A`, `B`, `C`, `D`, `E`, `F`, `G`, `H`, `I`, `S`, `T`, `Z`, `` ` ``, `a`, `b`, `d`, `e`, `f`
 - `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`, `h`, `l`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
 - `CSI 4h` / `CSI 4l` для `IRM` (`insert/replace mode`)
 - `CSI 20h` / `CSI 20l` для `LMN` (`new line mode` / `line feed mode`)
+- `CSI ?1h` / `CSI ?1l` для `DECCKM` и `CSI ?2h` / `CSI ?2l` для `DECANM`
 - `CSI ?5h` / `CSI ?5l` для `DECSCNM` (`reverse screen mode`)
 - `CSI ?7h` / `CSI ?7l` для `DECAWM` (`autowrap`)
 - `CSI ?6h` / `CSI ?6l` для `DECOM` (`origin mode`)
@@ -82,6 +84,8 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `DA` / `DSR` ответы отправляются обратно через `stdio`
 - tab stops по умолчанию стоят через каждые `8` колонок
 - `CSI b` повторяет предыдущий печатный символ (`REP`)
+- `ESC N` / `ESC O` сейчас реализованы best-effort: оба делают single-shift на `G1` для следующего печатного символа
+- `CAN` / `SUB` отменяют текущую escape-последовательность, `DEL` игнорируется
 - `CPR` (`CSI 6n`) учитывает `DECOM`: строка возвращается относительно scroll region, когда origin mode включён
 
 Текущие требования:
@@ -140,6 +144,7 @@ bash tools/logo_from_magick.sh logo.png cw
 - Терминал не претендует на полный VT100. Реализован только базовый subset escape-последовательностей, который нужен для позиционирования курсора, очистки и простых цветов.
 - `SGR blink` сейчас принимается и хранится как атрибут, но без таймера анимации мигания.
 - `DEC Special Graphics` сейчас в первую очередь покрывает line-drawing символы для рамок и пересечений.
+- `VT52`-режим реализован без отдельного набора `G2/G3`: `ESC N` / `ESC O` сведены к single-shift через `G1`, этого достаточно для best-effort совместимости.
 - В терминальном режиме сейчас нет аппаратного scrollback и нет поддержки UTF-8.
 - Декодер поддерживает только `baseline JPEG`. Если сохранить логотип как `progressive JPEG`, boot logo не покажется.
 - Логотип сейчас ожидается размером ровно `480x320`, иначе код уйдёт в fallback с чёрным экраном перед следующими демо-экранами.

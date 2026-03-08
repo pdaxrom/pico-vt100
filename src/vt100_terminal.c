@@ -15,6 +15,8 @@ enum {
   VT100_STATE_ESC_G0,
   VT100_STATE_ESC_G1,
   VT100_STATE_ESC_HASH,
+  VT100_STATE_VT52_CURSOR_ROW,
+  VT100_STATE_VT52_CURSOR_COL,
 };
 
 enum {
@@ -71,8 +73,20 @@ static uint8_t vt100_terminal_current_style(const vt100_terminal_t *terminal) {
   return terminal->style;
 }
 
-static uint8_t vt100_terminal_current_charset(const vt100_terminal_t *terminal) {
+static uint8_t vt100_terminal_normal_charset(const vt100_terminal_t *terminal) {
+  if (terminal->vt52_mode) {
+    return terminal->vt52_graphics ? VT100_CHARSET_DEC_SPECIAL : terminal->g0_charset;
+  }
+
   return terminal->gl_set == 0u ? terminal->g0_charset : terminal->g1_charset;
+}
+
+static uint8_t vt100_terminal_current_charset(const vt100_terminal_t *terminal) {
+  if (terminal->single_shift_pending && !terminal->vt52_mode) {
+    return terminal->single_shift_charset;
+  }
+
+  return vt100_terminal_normal_charset(terminal);
 }
 
 static uint8_t vt100_terminal_charset_from_designator(char ch) {
@@ -120,7 +134,7 @@ static vt100_terminal_cell_t vt100_terminal_blank_cell(const vt100_terminal_t *t
   cell.ch = ' ';
   cell.attr = vt100_terminal_current_attr(terminal);
   cell.style = vt100_terminal_current_style(terminal);
-  cell.charset = vt100_terminal_current_charset(terminal);
+  cell.charset = vt100_terminal_normal_charset(terminal);
   return cell;
 }
 
@@ -163,6 +177,25 @@ static void vt100_terminal_home_cursor(vt100_terminal_t *terminal) {
   terminal->cursor_row = vt100_terminal_row_base(terminal);
   terminal->cursor_col = 0u;
   terminal->wrap_pending = false;
+}
+
+static void vt100_terminal_reset_parser(vt100_terminal_t *terminal) {
+  terminal->state = VT100_STATE_GROUND;
+  terminal->csi_param_count = 0u;
+  terminal->csi_have_value = 0u;
+  terminal->csi_private = 0u;
+  terminal->csi_value = 0u;
+}
+
+static uint8_t vt100_terminal_decode_vt52_coord(char ch, uint8_t limit) {
+  const uint8_t value = (uint8_t)(((unsigned char)ch >= 0x20u) ? ((unsigned char)ch - 0x20u) : 0u);
+  return value > limit ? limit : value;
+}
+
+static void vt100_terminal_apply_vt52_cursor_address(vt100_terminal_t *terminal, uint8_t row, char col_ch) {
+  terminal->wrap_pending = false;
+  terminal->cursor_row = row;
+  terminal->cursor_col = vt100_terminal_decode_vt52_coord(col_ch, (uint8_t)(VT100_TERMINAL_COLS - 1u));
 }
 
 static void vt100_terminal_apply_cursor_address(vt100_terminal_t *terminal, uint16_t row_param, uint16_t col_param) {
@@ -266,6 +299,11 @@ static void vt100_terminal_emit(vt100_terminal_t *terminal, const char *data, si
 
 static void vt100_terminal_emit_device_attributes(vt100_terminal_t *terminal) {
   static const char response[] = "\x1b[?1;0c";
+  vt100_terminal_emit(terminal, response, sizeof(response) - 1u);
+}
+
+static void vt100_terminal_emit_vt52_ident(vt100_terminal_t *terminal) {
+  static const char response[] = "\x1b/Z";
   vt100_terminal_emit(terminal, response, sizeof(response) - 1u);
 }
 
@@ -1025,6 +1063,15 @@ static void vt100_terminal_dispatch_private_csi(vt100_terminal_t *terminal, char
 
   for (uint8_t i = 0; i < terminal->csi_param_count; ++i) {
     switch (terminal->csi_params[i]) {
+      case 1u:
+        terminal->cursor_key_application_mode = (final_char == 'h');
+        break;
+      case 2u:
+        terminal->vt52_mode = (final_char == 'l');
+        terminal->vt52_graphics = false;
+        terminal->single_shift_pending = false;
+        terminal->gl_set = 0u;
+        break;
       case 5u:
         terminal->screen_reverse = (final_char == 'h');
         vt100_terminal_render(terminal);
@@ -1293,6 +1340,8 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->csi_param_count = 0;
   terminal->csi_have_value = 0;
   terminal->csi_private = 0;
+  terminal->single_shift_charset = VT100_CHARSET_US;
+  terminal->vt52_pending_row = 0u;
   terminal->csi_value = 0;
   terminal->autowrap = true;
   terminal->wrap_pending = false;
@@ -1302,6 +1351,11 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->origin_mode = false;
   terminal->saved_origin_mode = terminal->origin_mode;
   terminal->screen_reverse = false;
+  terminal->cursor_key_application_mode = false;
+  terminal->keypad_application_mode = false;
+  terminal->vt52_mode = false;
+  terminal->vt52_graphics = false;
+  terminal->single_shift_pending = false;
   terminal->last_printable_valid = false;
   vt100_terminal_reset_tab_stops(terminal);
 
@@ -1343,7 +1397,20 @@ void vt100_terminal_set_output(vt100_terminal_t *terminal, vt100_terminal_output
 }
 
 void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
+  const unsigned char uch = (unsigned char)ch;
+
   vt100_terminal_hide_cursor(terminal);
+
+  if (uch == 0x7Fu) {
+    vt100_terminal_show_cursor(terminal);
+    return;
+  }
+
+  if (uch == 0x18u || uch == 0x1Au) {
+    vt100_terminal_reset_parser(terminal);
+    vt100_terminal_show_cursor(terminal);
+    return;
+  }
 
   switch (terminal->state) {
     case VT100_STATE_GROUND:
@@ -1352,7 +1419,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         break;
       }
 
-      switch ((unsigned char)ch) {
+      switch (uch) {
         case '\a':
           break;
         case '\b':
@@ -1386,7 +1453,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
           terminal->gl_set = 0u;
           break;
         default:
-          if ((unsigned char)ch >= 0x20u) {
+          if (uch >= 0x20u) {
             const vt100_terminal_cell_t cell = {
                 .ch = ch,
                 .attr = vt100_terminal_current_attr(terminal),
@@ -1394,6 +1461,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
                 .charset = vt100_terminal_current_charset(terminal),
             };
             vt100_terminal_write_cell(terminal, &cell);
+            terminal->single_shift_pending = false;
           }
           break;
       }
@@ -1401,6 +1469,76 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
 
     case VT100_STATE_ESC:
       terminal->state = VT100_STATE_GROUND;
+      if (terminal->vt52_mode) {
+        switch (ch) {
+          case '<':
+            terminal->vt52_mode = false;
+            terminal->vt52_graphics = false;
+            terminal->single_shift_pending = false;
+            terminal->gl_set = 0u;
+            break;
+          case 'A':
+            terminal->wrap_pending = false;
+            if (terminal->cursor_row > 0u) {
+              --terminal->cursor_row;
+            }
+            break;
+          case 'B':
+            terminal->wrap_pending = false;
+            if (terminal->cursor_row < (uint8_t)(VT100_TERMINAL_ROWS - 1u)) {
+              ++terminal->cursor_row;
+            }
+            break;
+          case 'C':
+            terminal->wrap_pending = false;
+            if (terminal->cursor_col < (uint8_t)(VT100_TERMINAL_COLS - 1u)) {
+              ++terminal->cursor_col;
+            }
+            break;
+          case 'D':
+            terminal->wrap_pending = false;
+            if (terminal->cursor_col > 0u) {
+              --terminal->cursor_col;
+            }
+            break;
+          case 'F':
+            terminal->vt52_graphics = true;
+            break;
+          case 'G':
+            terminal->vt52_graphics = false;
+            break;
+          case 'H':
+            terminal->cursor_row = 0u;
+            terminal->cursor_col = 0u;
+            terminal->wrap_pending = false;
+            break;
+          case 'I':
+            vt100_terminal_reverse_index(terminal);
+            break;
+          case 'J':
+            terminal->wrap_pending = false;
+            vt100_terminal_erase_display(terminal, 0u);
+            break;
+          case 'K':
+            terminal->wrap_pending = false;
+            vt100_terminal_erase_line(terminal, 0u);
+            break;
+          case 'Y':
+            terminal->state = VT100_STATE_VT52_CURSOR_ROW;
+            break;
+          case 'Z':
+            vt100_terminal_emit_vt52_ident(terminal);
+            break;
+          case '=':
+            terminal->keypad_application_mode = true;
+            break;
+          case '>':
+            terminal->keypad_application_mode = false;
+            break;
+        }
+        break;
+      }
+
       if (ch == '[') {
         terminal->state = VT100_STATE_CSI;
         terminal->csi_param_count = 0;
@@ -1448,6 +1586,13 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->tab_stops[terminal->cursor_col] = true;
       } else if (ch == 'M') {
         vt100_terminal_reverse_index(terminal);
+      } else if (ch == 'N' || ch == 'O') {
+        terminal->single_shift_charset = terminal->g1_charset;
+        terminal->single_shift_pending = true;
+      } else if (ch == '=') {
+        terminal->keypad_application_mode = true;
+      } else if (ch == '>') {
+        terminal->keypad_application_mode = false;
       } else if (ch == 'Z') {
         vt100_terminal_emit_device_attributes(terminal);
       }
@@ -1482,6 +1627,16 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
       if (ch == '8') {
         vt100_terminal_alignment_display(terminal);
       }
+      terminal->state = VT100_STATE_GROUND;
+      break;
+
+    case VT100_STATE_VT52_CURSOR_ROW:
+      terminal->vt52_pending_row = vt100_terminal_decode_vt52_coord(ch, (uint8_t)(VT100_TERMINAL_ROWS - 1u));
+      terminal->state = VT100_STATE_VT52_CURSOR_COL;
+      break;
+
+    case VT100_STATE_VT52_CURSOR_COL:
+      vt100_terminal_apply_vt52_cursor_address(terminal, terminal->vt52_pending_row, ch);
       terminal->state = VT100_STATE_GROUND;
       break;
   }

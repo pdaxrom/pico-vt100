@@ -51,6 +51,8 @@ typedef struct {
   uint8_t csi_param_count;
   uint8_t csi_have_value;
   uint8_t csi_private;
+  uint8_t single_shift_charset;
+  uint8_t vt52_pending_row;
   uint16_t csi_value;
   bool cursor_visible;
   bool autowrap;
@@ -61,6 +63,11 @@ typedef struct {
   bool origin_mode;
   bool saved_origin_mode;
   bool screen_reverse;
+  bool cursor_key_application_mode;
+  bool keypad_application_mode;
+  bool vt52_mode;
+  bool vt52_graphics;
+  bool single_shift_pending;
   bool last_printable_valid;
   vt100_terminal_output_fn output_fn;
   void *output_user_data;
