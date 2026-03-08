@@ -103,12 +103,13 @@ const uint8_t Font5x7[(FONT5X7_LAST_CHAR - FONT5X7_FIRST_CHAR + 1u) * FONT5X7_WI
     0x08, 0x1C, 0x2A, 0x08, 0x08, /* <- */
 };
 
-const uint8_t *font5x7_get_glyph(char c) {
-  uint8_t code = (uint8_t)c;
+const uint8_t *font5x7_get_glyph(char c)
+{
+    uint8_t code = (uint8_t)c;
 
-  if (code < FONT5X7_FIRST_CHAR || code > FONT5X7_LAST_CHAR) {
-    code = (uint8_t)'?';
-  }
+    if (code < FONT5X7_FIRST_CHAR || code > FONT5X7_LAST_CHAR) {
+        code = (uint8_t)'?';
+    }
 
-  return &Font5x7[(code - FONT5X7_FIRST_CHAR) * FONT5X7_WIDTH];
+    return &Font5x7[(code - FONT5X7_FIRST_CHAR) * FONT5X7_WIDTH];
 }

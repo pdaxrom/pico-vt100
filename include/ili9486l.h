@@ -37,7 +37,8 @@ void ili9486l_reset_vertical_scroll(void);
 
 void ili9486l_draw_pixel(uint16_t x, uint16_t y, lcd_color_t color);
 void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, lcd_color_t color);
-void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t red, uint8_t green, uint8_t blue);
+void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t red, uint8_t green,
+                               uint8_t blue);
 void ili9486l_fill_screen(lcd_color_t color);
 bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count);
