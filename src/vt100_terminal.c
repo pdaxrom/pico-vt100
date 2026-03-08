@@ -14,6 +14,7 @@ enum {
   VT100_STATE_CSI,
   VT100_STATE_ESC_G0,
   VT100_STATE_ESC_G1,
+  VT100_STATE_ESC_HASH,
 };
 
 enum {
@@ -170,6 +171,20 @@ static void vt100_terminal_render_rows(vt100_terminal_t *terminal, uint8_t top, 
   for (uint8_t row = top; row <= bottom; ++row) {
     vt100_terminal_render_row(terminal, row);
   }
+}
+
+static void vt100_terminal_alignment_display(vt100_terminal_t *terminal) {
+  const uint8_t attr = vt100_terminal_current_attr(terminal);
+  const uint8_t style = vt100_terminal_current_style(terminal);
+
+  for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
+    for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
+      vt100_terminal_set_cell(terminal, row, col, 'E', attr, style, VT100_CHARSET_US);
+    }
+  }
+
+  vt100_terminal_home_cursor(terminal);
+  vt100_terminal_render(terminal);
 }
 
 static void vt100_terminal_copy_color(uint8_t dst[3], const uint8_t src[3]) {
@@ -430,7 +445,7 @@ static bool vt100_terminal_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINA
   return (glyph_rows[py] & (1u << (VT100_TERMINAL_GLYPH_WIDTH - 1u - px))) != 0u;
 }
 
-static void vt100_terminal_resolve_colors(const vt100_terminal_cell_t *cell, bool invert, uint8_t fg[3], uint8_t bg[3]) {
+static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, const vt100_terminal_cell_t *cell, bool invert, uint8_t fg[3], uint8_t bg[3]) {
   uint8_t fg_index = VT100_ATTR_FG(cell->attr);
   const uint8_t bg_index = VT100_ATTR_BG(cell->attr);
 
@@ -446,6 +461,10 @@ static void vt100_terminal_resolve_colors(const vt100_terminal_cell_t *cell, boo
   }
 
   if ((cell->style & VT100_STYLE_REVERSE) != 0u) {
+    vt100_terminal_swap_colors(fg, bg);
+  }
+
+  if (terminal->screen_reverse) {
     vt100_terminal_swap_colors(fg, bg);
   }
 
@@ -466,7 +485,7 @@ static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal
   uint8_t bg[3];
 
   vt100_terminal_get_glyph_rows(cell, glyph_rows);
-  vt100_terminal_resolve_colors(cell, invert, fg, bg);
+  vt100_terminal_resolve_colors(terminal, cell, invert, fg, bg);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
     for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
@@ -516,7 +535,7 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
     const uint16_t cell_x = (uint16_t)(col * VT100_TERMINAL_CELL_WIDTH);
 
     vt100_terminal_get_glyph_rows(cell, glyph_rows);
-    vt100_terminal_resolve_colors(cell, false, fg, bg);
+    vt100_terminal_resolve_colors(terminal, cell, false, fg, bg);
 
     for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
       for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
@@ -912,6 +931,10 @@ static void vt100_terminal_dispatch_private_csi(vt100_terminal_t *terminal, char
 
   for (uint8_t i = 0; i < terminal->csi_param_count; ++i) {
     switch (terminal->csi_params[i]) {
+      case 5u:
+        terminal->screen_reverse = (final_char == 'h');
+        vt100_terminal_render(terminal);
+        break;
       case 6u:
         terminal->origin_mode = (final_char == 'h');
         vt100_terminal_home_cursor(terminal);
@@ -1120,6 +1143,7 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->newline_mode = false;
   terminal->origin_mode = false;
   terminal->saved_origin_mode = terminal->origin_mode;
+  terminal->screen_reverse = false;
   vt100_terminal_reset_tab_stops(terminal);
 
   for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
@@ -1231,6 +1255,8 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->csi_have_value = 0;
         terminal->csi_private = 0;
         terminal->csi_value = 0;
+      } else if (ch == '#') {
+        terminal->state = VT100_STATE_ESC_HASH;
       } else if (ch == '(') {
         terminal->state = VT100_STATE_ESC_G0;
       } else if (ch == ')') {
@@ -1295,6 +1321,13 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
 
     case VT100_STATE_ESC_G1:
       terminal->g1_charset = vt100_terminal_charset_from_designator(ch);
+      terminal->state = VT100_STATE_GROUND;
+      break;
+
+    case VT100_STATE_ESC_HASH:
+      if (ch == '8') {
+        vt100_terminal_alignment_display(terminal);
+      }
       terminal->state = VT100_STATE_GROUND;
       break;
   }

@@ -59,6 +59,7 @@ typedef struct {
   bool newline_mode;
   bool origin_mode;
   bool saved_origin_mode;
+  bool screen_reverse;
   vt100_terminal_output_fn output_fn;
   void *output_user_data;
   bool tab_stops[VT100_TERMINAL_COLS];
