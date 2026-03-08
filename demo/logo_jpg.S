@@ -1,5 +1,5 @@
 #ifndef LOGO_JPG_PATH
-#define LOGO_JPG_PATH "assets/logo.jpg"
+#define LOGO_JPG_PATH "demo/assets/logo.jpg"
 #endif
 
     .section .rodata.logo_jpg,"a",%progbits

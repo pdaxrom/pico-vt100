@@ -13,8 +13,8 @@ except ImportError:
   sys.exit(2)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUTPUT = PROJECT_ROOT / "assets" / "logo.jpg"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_OUTPUT = PROJECT_ROOT / "demo" / "assets" / "logo.jpg"
 
 
 def parse_args() -> argparse.Namespace:
