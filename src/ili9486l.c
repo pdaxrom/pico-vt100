@@ -265,21 +265,12 @@ void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
 }
 
 void ili9486l_write_rgb666_wire_pixels(const uint8_t *pixels, size_t pixel_count) {
-  const uint8_t *src = pixels;
-
   if (pixels == NULL || pixel_count == 0u) {
     return;
   }
 
   ili9486l_set_dc(1);
-
-  while (pixel_count > 0u) {
-    const size_t chunk = pixel_count > 256u ? 256u : pixel_count;
-
-    spi_write_blocking(LCD_SPI_PORT, src, chunk * 3u);
-    src += chunk * 3u;
-    pixel_count -= chunk;
-  }
+  spi_write_blocking(LCD_SPI_PORT, pixels, pixel_count * 3u);
 }
 
 void ili9486l_write_rgb888_as_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
