@@ -281,6 +281,12 @@ static void vt100_terminal_copy_color(uint8_t dst[3], const uint8_t src[3]) {
   dst[2] = src[2];
 }
 
+static void vt100_terminal_pack_wire_color(uint8_t color[3]) {
+  color[0] = (uint8_t)((color[0] & 0x3Fu) << 2);
+  color[1] = (uint8_t)((color[1] & 0x3Fu) << 2);
+  color[2] = (uint8_t)((color[2] & 0x3Fu) << 2);
+}
+
 static void vt100_terminal_swap_colors(uint8_t first[3], uint8_t second[3]) {
   for (uint8_t i = 0; i < 3u; ++i) {
     const uint8_t tmp = first[i];
@@ -548,38 +554,45 @@ static const uint8_t *vt100_terminal_get_glyph_columns(const vt100_terminal_cell
   return font5x7_get_glyph(ch);
 }
 
-static bool vt100_terminal_row_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT], uint8_t px, uint8_t py) {
-  if (px >= VT100_TERMINAL_GLYPH_WIDTH) {
-    return false;
+static uint8_t vt100_terminal_pack_row_bits(uint8_t row_bits) {
+  uint8_t mask = 0u;
+
+  for (uint8_t px = 0; px < VT100_TERMINAL_GLYPH_WIDTH; ++px) {
+    if ((row_bits & (1u << (VT100_TERMINAL_GLYPH_WIDTH - 1u - px))) != 0u) {
+      mask |= (uint8_t)(1u << px);
+    }
   }
 
-  if (py < VT100_TERMINAL_GLYPH_Y_OFFSET) {
-    return false;
-  }
-
-  py = (uint8_t)(py - VT100_TERMINAL_GLYPH_Y_OFFSET);
-  if (py >= VT100_TERMINAL_GLYPH_HEIGHT) {
-    return false;
-  }
-
-  return (glyph_rows[py] & (1u << (VT100_TERMINAL_GLYPH_WIDTH - 1u - px))) != 0u;
+  return mask;
 }
 
-static bool vt100_terminal_column_glyph_pixel_on(const uint8_t *glyph_columns, uint8_t px, uint8_t py) {
-  if (glyph_columns == NULL || px >= VT100_TERMINAL_GLYPH_WIDTH) {
-    return false;
+static void vt100_terminal_build_cell_row_masks(const vt100_terminal_cell_t *cell, uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT]) {
+  uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
+  const uint8_t *glyph_columns;
+  bool use_rows;
+
+  memset(row_masks, 0, VT100_TERMINAL_CELL_HEIGHT);
+  glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
+
+  for (uint8_t glyph_row = 0; glyph_row < VT100_TERMINAL_GLYPH_HEIGHT; ++glyph_row) {
+    uint8_t mask = 0u;
+
+    if (use_rows) {
+      mask = vt100_terminal_pack_row_bits(glyph_rows[glyph_row]);
+    } else {
+      for (uint8_t px = 0; px < VT100_TERMINAL_GLYPH_WIDTH; ++px) {
+        if ((glyph_columns[px] & (1u << glyph_row)) != 0u) {
+          mask |= (uint8_t)(1u << px);
+        }
+      }
+    }
+
+    row_masks[VT100_TERMINAL_GLYPH_Y_OFFSET + glyph_row] = mask;
   }
 
-  if (py < VT100_TERMINAL_GLYPH_Y_OFFSET) {
-    return false;
+  if ((cell->style & VT100_STYLE_UNDERLINE) != 0u) {
+    row_masks[VT100_TERMINAL_CELL_HEIGHT - 1u] = (uint8_t)((1u << VT100_TERMINAL_GLYPH_WIDTH) - 1u);
   }
-
-  py = (uint8_t)(py - VT100_TERMINAL_GLYPH_Y_OFFSET);
-  if (py >= VT100_TERMINAL_GLYPH_HEIGHT) {
-    return false;
-  }
-
-  return (glyph_columns[px] & (1u << py)) != 0u;
 }
 
 static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, const vt100_terminal_cell_t *cell, bool invert, uint8_t fg[3], uint8_t bg[3]) {
@@ -612,27 +625,26 @@ static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, cons
   if ((cell->style & VT100_STYLE_INVISIBLE) != 0u) {
     vt100_terminal_copy_color(fg, bg);
   }
+
+  vt100_terminal_pack_wire_color(fg);
+  vt100_terminal_pack_wire_color(bg);
 }
 
 static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal, uint8_t row, uint8_t col, bool invert) {
   uint8_t cell_pixels[VT100_TERMINAL_CELL_WIDTH * VT100_TERMINAL_CELL_HEIGHT * 3u];
-  uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
-  const uint8_t *glyph_columns;
-  bool use_rows;
+  uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT];
   const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
   uint8_t fg[3];
   uint8_t bg[3];
 
-  glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
+  vt100_terminal_build_cell_row_masks(cell, row_masks);
   vt100_terminal_resolve_colors(terminal, cell, invert, fg, bg);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
+    const uint8_t row_mask = row_masks[py];
+
     for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
-      const bool pixel_on = (use_rows ? vt100_terminal_row_glyph_pixel_on(glyph_rows, px, py)
-                                      : vt100_terminal_column_glyph_pixel_on(glyph_columns, px, py)) ||
-                            (((cell->style & VT100_STYLE_UNDERLINE) != 0u) &&
-                             py == (VT100_TERMINAL_CELL_HEIGHT - 1u) &&
-                             px < VT100_TERMINAL_GLYPH_WIDTH);
+      const bool pixel_on = (row_mask & (1u << px)) != 0u;
       const uint8_t *color = pixel_on ? fg : bg;
       uint8_t *dst = &cell_pixels[(py * VT100_TERMINAL_CELL_WIDTH + px) * 3u];
 
@@ -642,7 +654,7 @@ static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal
     }
   }
 
-  ili9486l_draw_rgb666_rect(
+  ili9486l_draw_rgb666_wire_rect(
       cell_pixels,
       (uint16_t)(terminal->origin_x + col * VT100_TERMINAL_CELL_WIDTH),
       (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),
@@ -668,24 +680,20 @@ static void vt100_terminal_show_cursor(vt100_terminal_t *terminal) {
 
 static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
   for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
-    uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
-    const uint8_t *glyph_columns;
-    bool use_rows;
+    uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT];
     const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
     uint8_t fg[3];
     uint8_t bg[3];
     const uint16_t cell_x = (uint16_t)(col * VT100_TERMINAL_CELL_WIDTH);
 
-    glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
+    vt100_terminal_build_cell_row_masks(cell, row_masks);
     vt100_terminal_resolve_colors(terminal, cell, false, fg, bg);
 
     for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
+      const uint8_t row_mask = row_masks[py];
+
       for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
-        const bool pixel_on = (use_rows ? vt100_terminal_row_glyph_pixel_on(glyph_rows, px, py)
-                                        : vt100_terminal_column_glyph_pixel_on(glyph_columns, px, py)) ||
-                              (((cell->style & VT100_STYLE_UNDERLINE) != 0u) &&
-                               py == (VT100_TERMINAL_CELL_HEIGHT - 1u) &&
-                               px < VT100_TERMINAL_GLYPH_WIDTH);
+        const bool pixel_on = (row_mask & (1u << px)) != 0u;
         const uint8_t *color = pixel_on ? fg : bg;
         uint8_t *dst = &g_row_buffer[((py * VT100_TERMINAL_WIDTH_PIXELS) + cell_x + px) * 3u];
 
@@ -696,7 +704,7 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
     }
   }
 
-  ili9486l_draw_rgb666_rect(
+  ili9486l_draw_rgb666_wire_rect(
       g_row_buffer,
       terminal->origin_x,
       (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),

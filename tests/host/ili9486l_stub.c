@@ -62,6 +62,14 @@ void ili9486l_draw_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, ui
   (void)h;
 }
 
+void ili9486l_draw_rgb666_wire_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  (void)bitmap;
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+}
+
 void ili9486l_draw_rgb888_as_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   (void)bitmap;
   (void)x;
@@ -112,6 +120,11 @@ void ili9486l_set_rotation(uint8_t rotation) {
 }
 
 void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
+  (void)pixels;
+  (void)pixel_count;
+}
+
+void ili9486l_write_rgb666_wire_pixels(const uint8_t *pixels, size_t pixel_count) {
   (void)pixels;
   (void)pixel_count;
 }

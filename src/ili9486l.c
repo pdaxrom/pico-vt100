@@ -35,6 +35,8 @@
 #define LCD_PIN_BLK (-1)
 #endif
 
+#define ILI9486L_FAST_TEXT_SCALE_MAX 4u
+
 static uint16_t g_width = LCD_NATIVE_WIDTH;
 static uint16_t g_height = LCD_NATIVE_HEIGHT;
 static uint16_t g_scroll_top_fixed = 0;
@@ -262,6 +264,24 @@ void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
   }
 }
 
+void ili9486l_write_rgb666_wire_pixels(const uint8_t *pixels, size_t pixel_count) {
+  const uint8_t *src = pixels;
+
+  if (pixels == NULL || pixel_count == 0u) {
+    return;
+  }
+
+  ili9486l_set_dc(1);
+
+  while (pixel_count > 0u) {
+    const size_t chunk = pixel_count > 256u ? 256u : pixel_count;
+
+    spi_write_blocking(LCD_SPI_PORT, src, chunk * 3u);
+    src += chunk * 3u;
+    pixel_count -= chunk;
+  }
+}
+
 void ili9486l_write_rgb888_as_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
   uint8_t burst[64 * 3];
   const uint8_t *src = pixels;
@@ -293,6 +313,14 @@ void ili9486l_draw_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, ui
   }
 
   ili9486l_write_rgb666_pixels(bitmap, (size_t)w * h);
+}
+
+void ili9486l_draw_rgb666_wire_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  if (bitmap == NULL || !ili9486l_begin_write(x, y, w, h)) {
+    return;
+  }
+
+  ili9486l_write_rgb666_wire_pixels(bitmap, (size_t)w * h);
 }
 
 void ili9486l_draw_rgb666_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h) {
@@ -448,14 +476,9 @@ void ili9486l_fill_screen(lcd_color_t color) {
   ili9486l_fill_rect(0, 0, g_width, g_height, color);
 }
 
-void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
-  const uint8_t *glyph;
+static void ili9486l_draw_char_slow(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
+  const uint8_t *glyph = font5x7_get_glyph(c);
 
-  if (scale == 0 || x >= g_width || y >= g_height) {
-    return;
-  }
-
-  glyph = font5x7_get_glyph(c);
   ili9486l_fill_rect(x, y, (uint16_t)(6u * scale), (uint16_t)(8u * scale), bg);
 
   for (uint8_t col = 0; col < FONT5X7_WIDTH; ++col) {
@@ -465,6 +488,70 @@ void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_colo
       if ((column_bits & (1u << row)) != 0u) {
         ili9486l_fill_rect((uint16_t)(x + col * scale), (uint16_t)(y + row * scale), scale, scale, fg);
       }
+    }
+  }
+}
+
+static uint8_t ili9486l_glyph_row_mask(const uint8_t *glyph, uint8_t row) {
+  uint8_t mask = 0u;
+
+  if (glyph == NULL || row >= FONT5X7_HEIGHT) {
+    return 0u;
+  }
+
+  for (uint8_t col = 0; col < FONT5X7_WIDTH; ++col) {
+    if ((glyph[col] & (1u << row)) != 0u) {
+      mask |= (uint8_t)(1u << col);
+    }
+  }
+
+  return mask;
+}
+
+void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
+  const uint8_t *glyph;
+  const uint16_t glyph_w = (uint16_t)(6u * scale);
+  const uint16_t glyph_h = (uint16_t)(8u * scale);
+  uint8_t row_pixels[6u * ILI9486L_FAST_TEXT_SCALE_MAX * 3u];
+  uint8_t fg_wire[3];
+  uint8_t bg_wire[3];
+
+  if (scale == 0 || x >= g_width || y >= g_height) {
+    return;
+  }
+
+  glyph = font5x7_get_glyph(c);
+  if (scale > ILI9486L_FAST_TEXT_SCALE_MAX || (uint32_t)x + glyph_w > g_width || (uint32_t)y + glyph_h > g_height) {
+    ili9486l_draw_char_slow(x, y, c, fg, bg, scale);
+    return;
+  }
+
+  ili9486l_color_to_rgb666(fg, fg_wire);
+  ili9486l_color_to_rgb666(bg, bg_wire);
+
+  if (!ili9486l_begin_write(x, y, glyph_w, glyph_h)) {
+    return;
+  }
+
+  for (uint8_t glyph_row = 0; glyph_row < 8u; ++glyph_row) {
+    const uint8_t row_mask = ili9486l_glyph_row_mask(glyph, glyph_row);
+
+    for (uint8_t sy = 0; sy < scale; ++sy) {
+      uint8_t *dst = row_pixels;
+
+      for (uint8_t col = 0; col < 6u; ++col) {
+        const bool pixel_on = (row_mask & (1u << col)) != 0u;
+        const uint8_t *color = pixel_on ? fg_wire : bg_wire;
+
+        for (uint8_t sx = 0; sx < scale; ++sx) {
+          dst[0] = color[0];
+          dst[1] = color[1];
+          dst[2] = color[2];
+          dst += 3;
+        }
+      }
+
+      ili9486l_write_rgb666_wire_pixels(row_pixels, glyph_w);
     }
   }
 }

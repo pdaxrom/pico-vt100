@@ -37,8 +37,10 @@ void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, u
 void ili9486l_fill_screen(lcd_color_t color);
 bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count);
+void ili9486l_write_rgb666_wire_pixels(const uint8_t *pixels, size_t pixel_count);
 void ili9486l_write_rgb888_as_rgb666_pixels(const uint8_t *pixels, size_t pixel_count);
 void ili9486l_draw_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+void ili9486l_draw_rgb666_wire_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void ili9486l_draw_rgb666_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h);
 void ili9486l_draw_rgb888_as_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale);
