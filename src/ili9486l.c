@@ -2,6 +2,7 @@
 
 #include "font5x7.h"
 
+#include "hardware/dma.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 
@@ -36,6 +37,7 @@
 #endif
 
 #define ILI9486L_FAST_TEXT_SCALE_MAX 4u
+#define ILI9486L_DMA_MIN_TRANSFER_BYTES 256u
 
 static uint16_t g_width = LCD_NATIVE_WIDTH;
 static uint16_t g_height = LCD_NATIVE_HEIGHT;
@@ -43,10 +45,58 @@ static uint16_t g_scroll_top_fixed = 0;
 static uint16_t g_scroll_area = LCD_NATIVE_HEIGHT;
 static uint16_t g_scroll_bottom_fixed = 0;
 static uint16_t g_scroll_start = 0;
+static int g_spi_tx_dma_channel = -1;
+static dma_channel_config_t g_spi_tx_dma_config;
 
 static inline void ili9486l_set_dc(uint8_t data_mode) {
   gpio_put(LCD_PIN_DC, data_mode);
   busy_wait_us_32(1);
+}
+
+static void ili9486l_finish_spi_write(void) {
+  while (spi_is_readable(LCD_SPI_PORT)) {
+    (void)spi_get_hw(LCD_SPI_PORT)->dr;
+  }
+  while (spi_is_busy(LCD_SPI_PORT)) {
+    tight_loop_contents();
+  }
+  while (spi_is_readable(LCD_SPI_PORT)) {
+    (void)spi_get_hw(LCD_SPI_PORT)->dr;
+  }
+
+  spi_get_hw(LCD_SPI_PORT)->icr = SPI_SSPICR_RORIC_BITS;
+}
+
+static void ili9486l_init_dma(void) {
+  const int channel = dma_claim_unused_channel(false);
+
+  if (channel < 0) {
+    return;
+  }
+
+  g_spi_tx_dma_channel = channel;
+  g_spi_tx_dma_config = dma_channel_get_default_config((uint)channel);
+  channel_config_set_transfer_data_size(&g_spi_tx_dma_config, DMA_SIZE_8);
+  channel_config_set_read_increment(&g_spi_tx_dma_config, true);
+  channel_config_set_write_increment(&g_spi_tx_dma_config, false);
+  channel_config_set_dreq(&g_spi_tx_dma_config, spi_get_dreq(LCD_SPI_PORT, true));
+}
+
+static bool ili9486l_write_dma_if_beneficial(const uint8_t *data, size_t len) {
+  if (data == NULL || len < ILI9486L_DMA_MIN_TRANSFER_BYTES || g_spi_tx_dma_channel < 0) {
+    return false;
+  }
+
+  dma_channel_configure(
+      (uint)g_spi_tx_dma_channel,
+      &g_spi_tx_dma_config,
+      &spi_get_hw(LCD_SPI_PORT)->dr,
+      data,
+      dma_encode_transfer_count((uint)len),
+      true);
+  dma_channel_wait_for_finish_blocking((uint)g_spi_tx_dma_channel);
+  ili9486l_finish_spi_write();
+  return true;
 }
 
 static void ili9486l_write_command(uint8_t command) {
@@ -265,12 +315,16 @@ void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
 }
 
 void ili9486l_write_rgb666_wire_pixels(const uint8_t *pixels, size_t pixel_count) {
+  const size_t len = pixel_count * 3u;
+
   if (pixels == NULL || pixel_count == 0u) {
     return;
   }
 
   ili9486l_set_dc(1);
-  spi_write_blocking(LCD_SPI_PORT, pixels, pixel_count * 3u);
+  if (!ili9486l_write_dma_if_beneficial(pixels, len)) {
+    spi_write_blocking(LCD_SPI_PORT, pixels, len);
+  }
 }
 
 void ili9486l_write_rgb888_as_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
@@ -371,6 +425,7 @@ void ili9486l_set_rotation(uint8_t rotation) {
 void ili9486l_init(void) {
   spi_init(LCD_SPI_PORT, LCD_SPI_BAUDRATE_HZ);
   spi_set_format(LCD_SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+  ili9486l_init_dma();
 
   gpio_set_function(LCD_PIN_SCK, GPIO_FUNC_SPI);
   gpio_set_function(LCD_PIN_MOSI, GPIO_FUNC_SPI);

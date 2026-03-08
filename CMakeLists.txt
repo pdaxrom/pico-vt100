@@ -51,6 +51,7 @@ target_compile_definitions(ili9486l_lcd PRIVATE
 
 target_link_libraries(ili9486l_lcd PRIVATE
   pico_stdlib
+  hardware_dma
   hardware_spi
 )
 
