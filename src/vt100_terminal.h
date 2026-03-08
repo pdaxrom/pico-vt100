@@ -60,10 +60,12 @@ typedef struct {
   bool origin_mode;
   bool saved_origin_mode;
   bool screen_reverse;
+  bool last_printable_valid;
   vt100_terminal_output_fn output_fn;
   void *output_user_data;
   bool tab_stops[VT100_TERMINAL_COLS];
   vt100_terminal_cell_t cells[VT100_TERMINAL_ROWS][VT100_TERMINAL_COLS];
+  vt100_terminal_cell_t last_printable;
   uint16_t csi_params[8];
 } vt100_terminal_t;
 

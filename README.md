@@ -70,7 +70,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `ESC #8` для `DECALN` (`screen alignment display`)
 - `ESC H` для установки tab stop в текущей колонке
 - `ESC ( 0`, `ESC ( B`, `ESC ) 0`, `ESC ) B`, `SO`, `SI` для `DEC Special Graphics`
-- `CSI A`, `B`, `C`, `D`, `G`, `H`, `f`, `d`
+- `CSI A`, `B`, `C`, `D`, `E`, `F`, `G`, `H`, `I`, `S`, `T`, `Z`, `` ` ``, `a`, `b`, `d`, `e`, `f`
 - `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`, `h`, `l`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
 - `CSI 4h` / `CSI 4l` для `IRM` (`insert/replace mode`)
@@ -81,6 +81,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `CSI ?25h` / `CSI ?25l` для показа/скрытия курсора
 - `DA` / `DSR` ответы отправляются обратно через `stdio`
 - tab stops по умолчанию стоят через каждые `8` колонок
+- `CSI b` повторяет предыдущий печатный символ (`REP`)
 
 Текущие требования:
 
