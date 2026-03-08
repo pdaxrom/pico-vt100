@@ -256,7 +256,7 @@ int main(void) {
   vt100_terminal_write(&terminal, "ILI9486L VT100 TERMINAL 80X35\r\n");
   vt100_terminal_write(&terminal, "UART/STDIO input is rendered directly to LCD.\r\n");
   vt100_terminal_write(&terminal, "Supported: CSI A/B/C/D/G/H/f/d/J/K/L/M/@/P/X/m/r/n/c/g.\r\n");
-  vt100_terminal_write(&terminal, "Modes: DECAWM, DECSTBM, RI, DEC graphics, tab stops via ESC H / CSI g.\r\n");
+  vt100_terminal_write(&terminal, "Modes: DECAWM, DECOM, DECSTBM, RI, cursor show/hide, DEC graphics.\r\n");
   vt100_terminal_write(&terminal, "\r\n");
   vt100_terminal_write(&terminal, "\x1b[32mREADY\x1b[0m> ");
 

@@ -73,6 +73,8 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
 - `CSI ?7h` / `CSI ?7l` для `DECAWM` (`autowrap`)
+- `CSI ?6h` / `CSI ?6l` для `DECOM` (`origin mode`)
+- `CSI ?25h` / `CSI ?25l` для показа/скрытия курсора
 - `DA` / `DSR` ответы отправляются обратно через `stdio`
 - tab stops по умолчанию стоят через каждые `8` колонок
 

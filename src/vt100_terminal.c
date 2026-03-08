@@ -129,6 +129,39 @@ static uint8_t vt100_terminal_find_next_tab_stop(const vt100_terminal_t *termina
   return (uint8_t)(VT100_TERMINAL_COLS - 1u);
 }
 
+static uint8_t vt100_terminal_row_base(const vt100_terminal_t *terminal) {
+  return terminal->origin_mode ? terminal->scroll_top : 0u;
+}
+
+static uint8_t vt100_terminal_row_limit(const vt100_terminal_t *terminal) {
+  return terminal->origin_mode ? terminal->scroll_bottom : (uint8_t)(VT100_TERMINAL_ROWS - 1u);
+}
+
+static void vt100_terminal_home_cursor(vt100_terminal_t *terminal) {
+  terminal->cursor_row = vt100_terminal_row_base(terminal);
+  terminal->cursor_col = 0u;
+  terminal->wrap_pending = false;
+}
+
+static void vt100_terminal_apply_cursor_address(vt100_terminal_t *terminal, uint16_t row_param, uint16_t col_param) {
+  const uint8_t row_base = vt100_terminal_row_base(terminal);
+  const uint8_t row_limit = vt100_terminal_row_limit(terminal);
+  const uint8_t row_span = (uint8_t)(row_limit - row_base + 1u);
+
+  terminal->wrap_pending = false;
+  terminal->cursor_row = (uint8_t)(row_base + ((row_param == 0u || row_param > row_span) ? (row_span - 1u) : (row_param - 1u)));
+  terminal->cursor_col = (uint8_t)((col_param == 0u || col_param > VT100_TERMINAL_COLS) ? (VT100_TERMINAL_COLS - 1u) : (col_param - 1u));
+}
+
+static void vt100_terminal_apply_row_address(vt100_terminal_t *terminal, uint16_t row_param) {
+  const uint8_t row_base = vt100_terminal_row_base(terminal);
+  const uint8_t row_limit = vt100_terminal_row_limit(terminal);
+  const uint8_t row_span = (uint8_t)(row_limit - row_base + 1u);
+
+  terminal->wrap_pending = false;
+  terminal->cursor_row = (uint8_t)(row_base + ((row_param == 0u || row_param > row_span) ? (row_span - 1u) : (row_param - 1u)));
+}
+
 static void vt100_terminal_render_rows(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom) {
   if (top > bottom || bottom >= VT100_TERMINAL_ROWS) {
     return;
@@ -879,11 +912,18 @@ static void vt100_terminal_dispatch_private_csi(vt100_terminal_t *terminal, char
 
   for (uint8_t i = 0; i < terminal->csi_param_count; ++i) {
     switch (terminal->csi_params[i]) {
+      case 6u:
+        terminal->origin_mode = (final_char == 'h');
+        vt100_terminal_home_cursor(terminal);
+        break;
       case 7u:
         terminal->autowrap = (final_char == 'h');
         if (!terminal->autowrap) {
           terminal->wrap_pending = false;
         }
+        break;
+      case 25u:
+        terminal->cursor_visible = (final_char == 'h');
         break;
     }
   }
@@ -942,9 +982,7 @@ static void vt100_terminal_dispatch_csi(vt100_terminal_t *terminal, char final_c
       break;
     case 'H':
     case 'f':
-      terminal->wrap_pending = false;
-      terminal->cursor_row = (uint8_t)((first == 0u || first > VT100_TERMINAL_ROWS) ? (VT100_TERMINAL_ROWS - 1u) : (first - 1u));
-      terminal->cursor_col = (uint8_t)((second == 0u || second > VT100_TERMINAL_COLS) ? (VT100_TERMINAL_COLS - 1u) : (second - 1u));
+      vt100_terminal_apply_cursor_address(terminal, first, second);
       break;
     case 'J':
       terminal->wrap_pending = false;
@@ -974,8 +1012,7 @@ static void vt100_terminal_dispatch_csi(vt100_terminal_t *terminal, char final_c
       vt100_terminal_emit_device_attributes(terminal);
       break;
     case 'd':
-      terminal->wrap_pending = false;
-      terminal->cursor_row = (uint8_t)((first == 0u || first > VT100_TERMINAL_ROWS) ? (VT100_TERMINAL_ROWS - 1u) : (first - 1u));
+      vt100_terminal_apply_row_address(terminal, first);
       break;
     case 'g':
       if (vt100_terminal_param_or(terminal, 0, 0u) == 3u) {
@@ -1001,9 +1038,7 @@ static void vt100_terminal_dispatch_csi(vt100_terminal_t *terminal, char final_c
       if (top >= 1u && top < bottom && bottom <= VT100_TERMINAL_ROWS) {
         terminal->scroll_top = (uint8_t)(top - 1u);
         terminal->scroll_bottom = (uint8_t)(bottom - 1u);
-        terminal->cursor_row = 0u;
-        terminal->cursor_col = 0u;
-        terminal->wrap_pending = false;
+        vt100_terminal_home_cursor(terminal);
       }
       break;
     }
@@ -1058,6 +1093,8 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->csi_value = 0;
   terminal->autowrap = true;
   terminal->wrap_pending = false;
+  terminal->origin_mode = false;
+  terminal->saved_origin_mode = terminal->origin_mode;
   vt100_terminal_reset_tab_stops(terminal);
 
   for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
@@ -1176,6 +1213,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->saved_g0_charset = terminal->g0_charset;
         terminal->saved_g1_charset = terminal->g1_charset;
         terminal->saved_gl_set = terminal->gl_set;
+        terminal->saved_origin_mode = terminal->origin_mode;
       } else if (ch == '8') {
         terminal->cursor_row = terminal->saved_row;
         terminal->cursor_col = terminal->saved_col;
@@ -1185,6 +1223,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->g0_charset = terminal->saved_g0_charset;
         terminal->g1_charset = terminal->saved_g1_charset;
         terminal->gl_set = terminal->saved_gl_set;
+        terminal->origin_mode = terminal->saved_origin_mode;
       } else if (ch == 'c') {
         vt100_terminal_reset(terminal);
         return;

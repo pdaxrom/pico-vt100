@@ -55,6 +55,8 @@ typedef struct {
   bool cursor_visible;
   bool autowrap;
   bool wrap_pending;
+  bool origin_mode;
+  bool saved_origin_mode;
   vt100_terminal_output_fn output_fn;
   void *output_user_data;
   bool tab_stops[VT100_TERMINAL_COLS];
