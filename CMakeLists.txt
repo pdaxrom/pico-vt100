@@ -22,7 +22,9 @@ project(ili9486l_lcd C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)
+# Pico SDK for RP2350 uses GNU C constructs such as `asm` in C sources.
+# Keep GNU extensions enabled so both RP2040 and Pico 2 builds work.
+set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
