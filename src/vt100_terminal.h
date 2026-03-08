@@ -21,6 +21,7 @@ typedef struct {
   char ch;
   uint8_t attr;
   uint8_t style;
+  uint8_t charset;
 } vt100_terminal_cell_t;
 
 typedef struct {
@@ -38,6 +39,12 @@ typedef struct {
   uint8_t saved_fg;
   uint8_t saved_bg;
   uint8_t saved_style;
+  uint8_t g0_charset;
+  uint8_t g1_charset;
+  uint8_t gl_set;
+  uint8_t saved_g0_charset;
+  uint8_t saved_g1_charset;
+  uint8_t saved_gl_set;
   uint8_t scroll_top;
   uint8_t scroll_bottom;
   uint8_t state;

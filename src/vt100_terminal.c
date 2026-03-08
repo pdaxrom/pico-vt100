@@ -12,6 +12,8 @@ enum {
   VT100_STATE_GROUND = 0,
   VT100_STATE_ESC,
   VT100_STATE_CSI,
+  VT100_STATE_ESC_G0,
+  VT100_STATE_ESC_G1,
 };
 
 enum {
@@ -21,6 +23,11 @@ enum {
   VT100_STYLE_BLINK = 1u << 3,
   VT100_STYLE_REVERSE = 1u << 4,
   VT100_STYLE_INVISIBLE = 1u << 5,
+};
+
+enum {
+  VT100_CHARSET_US = 0,
+  VT100_CHARSET_DEC_SPECIAL,
 };
 
 #define VT100_ATTR(fg, bg) (uint8_t)((((bg) & 0x0Fu) << 4) | ((fg) & 0x0Fu))
@@ -56,6 +63,20 @@ static uint8_t vt100_terminal_current_style(const vt100_terminal_t *terminal) {
   return terminal->style;
 }
 
+static uint8_t vt100_terminal_current_charset(const vt100_terminal_t *terminal) {
+  return terminal->gl_set == 0u ? terminal->g0_charset : terminal->g1_charset;
+}
+
+static uint8_t vt100_terminal_charset_from_designator(char ch) {
+  switch (ch) {
+    case '0':
+      return VT100_CHARSET_DEC_SPECIAL;
+    case 'B':
+    default:
+      return VT100_CHARSET_US;
+  }
+}
+
 static uint8_t vt100_terminal_sanitize_char(char ch) {
   if ((unsigned char)ch < 0x20u || (unsigned char)ch > 0x7Eu) {
     return '?';
@@ -64,10 +85,11 @@ static uint8_t vt100_terminal_sanitize_char(char ch) {
   return (uint8_t)ch;
 }
 
-static void vt100_terminal_set_cell(vt100_terminal_t *terminal, uint8_t row, uint8_t col, char ch, uint8_t attr, uint8_t style) {
+static void vt100_terminal_set_cell(vt100_terminal_t *terminal, uint8_t row, uint8_t col, char ch, uint8_t attr, uint8_t style, uint8_t charset) {
   terminal->cells[row][col].ch = ch;
   terminal->cells[row][col].attr = attr;
   terminal->cells[row][col].style = style;
+  terminal->cells[row][col].charset = charset;
 }
 
 static void vt100_terminal_fill_range(vt100_terminal_t *terminal, uint8_t row, uint8_t col_start, uint8_t col_end, uint8_t attr, uint8_t style) {
@@ -76,7 +98,7 @@ static void vt100_terminal_fill_range(vt100_terminal_t *terminal, uint8_t row, u
   }
 
   for (uint8_t col = col_start; col <= col_end; ++col) {
-    vt100_terminal_set_cell(terminal, row, col, ' ', attr, style);
+    vt100_terminal_set_cell(terminal, row, col, ' ', attr, style, VT100_CHARSET_US);
   }
 }
 
@@ -136,6 +158,191 @@ static void vt100_terminal_emit_cursor_position(vt100_terminal_t *terminal) {
   }
 }
 
+static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
+  memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
+
+  switch (ch) {
+    case '`':
+      rows[1] = 0x04;
+      rows[2] = 0x0E;
+      rows[3] = 0x1F;
+      rows[4] = 0x0E;
+      rows[5] = 0x04;
+      return;
+    case 'a':
+      rows[0] = 0x15;
+      rows[1] = 0x0A;
+      rows[2] = 0x15;
+      rows[3] = 0x0A;
+      rows[4] = 0x15;
+      rows[5] = 0x0A;
+      rows[6] = 0x15;
+      return;
+    case 'f':
+      rows[0] = 0x06;
+      rows[1] = 0x09;
+      rows[2] = 0x09;
+      rows[3] = 0x06;
+      return;
+    case 'g':
+      rows[1] = 0x04;
+      rows[2] = 0x1F;
+      rows[3] = 0x04;
+      rows[5] = 0x1F;
+      return;
+    case 'j':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x1C;
+      return;
+    case 'k':
+      rows[3] = 0x1C;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'l':
+      rows[3] = 0x07;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'm':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x07;
+      return;
+    case 'n':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x1F;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'o':
+      rows[0] = 0x1F;
+      return;
+    case 'p':
+      rows[1] = 0x1F;
+      return;
+    case 'q':
+      rows[3] = 0x1F;
+      return;
+    case 'r':
+      rows[4] = 0x1F;
+      return;
+    case 's':
+      rows[6] = 0x1F;
+      return;
+    case 't':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x07;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'u':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x1C;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'v':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x1F;
+      return;
+    case 'w':
+      rows[3] = 0x1F;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'x':
+      rows[0] = 0x04;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x04;
+      rows[4] = 0x04;
+      rows[5] = 0x04;
+      rows[6] = 0x04;
+      return;
+    case 'y':
+      rows[0] = 0x02;
+      rows[1] = 0x04;
+      rows[2] = 0x08;
+      rows[3] = 0x10;
+      rows[4] = 0x08;
+      rows[5] = 0x04;
+      rows[6] = 0x1F;
+      return;
+    case 'z':
+      rows[0] = 0x08;
+      rows[1] = 0x04;
+      rows[2] = 0x02;
+      rows[3] = 0x01;
+      rows[4] = 0x02;
+      rows[5] = 0x04;
+      rows[6] = 0x1F;
+      return;
+    case '{':
+      rows[0] = 0x1F;
+      rows[1] = 0x04;
+      rows[2] = 0x04;
+      rows[3] = 0x04;
+      rows[4] = 0x04;
+      rows[5] = 0x14;
+      rows[6] = 0x08;
+      return;
+    case '|':
+      rows[1] = 0x01;
+      rows[2] = 0x1F;
+      rows[3] = 0x02;
+      rows[4] = 0x1F;
+      rows[5] = 0x10;
+      return;
+    case '}':
+      rows[0] = 0x0E;
+      rows[1] = 0x11;
+      rows[2] = 0x10;
+      rows[3] = 0x1E;
+      rows[4] = 0x10;
+      rows[5] = 0x10;
+      rows[6] = 0x1F;
+      return;
+    case '~':
+      rows[2] = 0x04;
+      rows[3] = 0x0E;
+      rows[4] = 0x0E;
+      rows[5] = 0x04;
+      return;
+    default:
+      font5x7_get_rows((char)vt100_terminal_sanitize_char(ch), rows);
+      return;
+  }
+}
+
+static void vt100_terminal_get_glyph_rows(const vt100_terminal_cell_t *cell, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
+  const char ch = (char)vt100_terminal_sanitize_char(cell->ch);
+
+  if (cell->charset == VT100_CHARSET_DEC_SPECIAL) {
+    vt100_terminal_get_dec_special_rows(ch, rows);
+    return;
+  }
+
+  font5x7_get_rows(ch, rows);
+}
+
 static bool vt100_terminal_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT], uint8_t px, uint8_t py) {
   if (px >= VT100_TERMINAL_GLYPH_WIDTH) {
     return false;
@@ -188,7 +395,7 @@ static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal
   uint8_t fg[3];
   uint8_t bg[3];
 
-  font5x7_get_rows((char)vt100_terminal_sanitize_char(cell->ch), glyph_rows);
+  vt100_terminal_get_glyph_rows(cell, glyph_rows);
   vt100_terminal_resolve_colors(cell, invert, fg, bg);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
@@ -238,7 +445,7 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
     uint8_t bg[3];
     const uint16_t cell_x = (uint16_t)(col * VT100_TERMINAL_CELL_WIDTH);
 
-    font5x7_get_rows((char)vt100_terminal_sanitize_char(cell->ch), glyph_rows);
+    vt100_terminal_get_glyph_rows(cell, glyph_rows);
     vt100_terminal_resolve_colors(cell, false, fg, bg);
 
     for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
@@ -631,9 +838,15 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->fg = terminal->default_fg;
   terminal->bg = terminal->default_bg;
   terminal->style = 0u;
+  terminal->g0_charset = VT100_CHARSET_US;
+  terminal->g1_charset = VT100_CHARSET_US;
+  terminal->gl_set = 0u;
   terminal->saved_fg = terminal->fg;
   terminal->saved_bg = terminal->bg;
   terminal->saved_style = terminal->style;
+  terminal->saved_g0_charset = terminal->g0_charset;
+  terminal->saved_g1_charset = terminal->g1_charset;
+  terminal->saved_gl_set = terminal->gl_set;
   terminal->scroll_top = 0u;
   terminal->scroll_bottom = (uint8_t)(VT100_TERMINAL_ROWS - 1u);
   terminal->state = VT100_STATE_GROUND;
@@ -715,6 +928,12 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
           terminal->wrap_pending = false;
           terminal->cursor_col = 0;
           break;
+        case '\x0e':
+          terminal->gl_set = 1u;
+          break;
+        case '\x0f':
+          terminal->gl_set = 0u;
+          break;
         default:
           if ((unsigned char)ch >= 0x20u) {
             vt100_terminal_commit_wrap(terminal);
@@ -724,7 +943,8 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
                 terminal->cursor_col,
                 ch,
                 vt100_terminal_current_attr(terminal),
-                vt100_terminal_current_style(terminal));
+                vt100_terminal_current_style(terminal),
+                vt100_terminal_current_charset(terminal));
             vt100_terminal_render_cell_internal(terminal, terminal->cursor_row, terminal->cursor_col, false);
             vt100_terminal_advance(terminal);
           }
@@ -740,18 +960,28 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->csi_have_value = 0;
         terminal->csi_private = 0;
         terminal->csi_value = 0;
+      } else if (ch == '(') {
+        terminal->state = VT100_STATE_ESC_G0;
+      } else if (ch == ')') {
+        terminal->state = VT100_STATE_ESC_G1;
       } else if (ch == '7') {
         terminal->saved_row = terminal->cursor_row;
         terminal->saved_col = terminal->cursor_col;
         terminal->saved_fg = terminal->fg;
         terminal->saved_bg = terminal->bg;
         terminal->saved_style = terminal->style;
+        terminal->saved_g0_charset = terminal->g0_charset;
+        terminal->saved_g1_charset = terminal->g1_charset;
+        terminal->saved_gl_set = terminal->gl_set;
       } else if (ch == '8') {
         terminal->cursor_row = terminal->saved_row;
         terminal->cursor_col = terminal->saved_col;
         terminal->fg = terminal->saved_fg;
         terminal->bg = terminal->saved_bg;
         terminal->style = terminal->saved_style;
+        terminal->g0_charset = terminal->saved_g0_charset;
+        terminal->g1_charset = terminal->saved_g1_charset;
+        terminal->gl_set = terminal->saved_gl_set;
       } else if (ch == 'c') {
         vt100_terminal_reset(terminal);
         return;
@@ -781,6 +1011,16 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         vt100_terminal_dispatch_csi(terminal, ch);
         terminal->state = VT100_STATE_GROUND;
       }
+      break;
+
+    case VT100_STATE_ESC_G0:
+      terminal->g0_charset = vt100_terminal_charset_from_designator(ch);
+      terminal->state = VT100_STATE_GROUND;
+      break;
+
+    case VT100_STATE_ESC_G1:
+      terminal->g1_charset = vt100_terminal_charset_from_designator(ch);
+      terminal->state = VT100_STATE_GROUND;
       break;
   }
 
