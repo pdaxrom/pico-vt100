@@ -63,7 +63,14 @@ static const uint8_t k_vt100_palette[16][3] = {
   {63u, 63u, 63u},
 };
 
-static uint8_t g_row_buffer[VT100_TERMINAL_WIDTH_PIXELS * VT100_TERMINAL_CELL_HEIGHT * 3u];
+typedef struct {
+  uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT];
+  uint8_t fg[3];
+  uint8_t bg[3];
+} vt100_terminal_render_cache_t;
+
+static uint8_t g_scanline_buffer[VT100_TERMINAL_WIDTH_PIXELS * 3u];
+static vt100_terminal_render_cache_t g_render_row_cache[VT100_TERMINAL_COLS];
 static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row);
 static void vt100_terminal_scroll_up_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom);
 static void vt100_terminal_scroll_down_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom);
@@ -640,22 +647,28 @@ static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, cons
   vt100_terminal_pack_wire_color(bg);
 }
 
+static void vt100_terminal_prepare_cell_render(
+    const vt100_terminal_t *terminal,
+    const vt100_terminal_cell_t *cell,
+    bool invert,
+    vt100_terminal_render_cache_t *render_data) {
+  vt100_terminal_build_cell_row_masks(cell, render_data->row_masks);
+  vt100_terminal_resolve_colors(terminal, cell, invert, render_data->fg, render_data->bg);
+}
+
 static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal, uint8_t row, uint8_t col, bool invert) {
   uint8_t cell_pixels[VT100_TERMINAL_CELL_WIDTH * VT100_TERMINAL_CELL_HEIGHT * 3u];
-  uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT];
+  vt100_terminal_render_cache_t render_data;
   const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
-  uint8_t fg[3];
-  uint8_t bg[3];
 
-  vt100_terminal_build_cell_row_masks(cell, row_masks);
-  vt100_terminal_resolve_colors(terminal, cell, invert, fg, bg);
+  vt100_terminal_prepare_cell_render(terminal, cell, invert, &render_data);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
-    const uint8_t row_mask = row_masks[py];
+    const uint8_t row_mask = render_data.row_masks[py];
 
     for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
       const bool pixel_on = (row_mask & (1u << px)) != 0u;
-      const uint8_t *color = pixel_on ? fg : bg;
+      const uint8_t *color = pixel_on ? render_data.fg : render_data.bg;
       uint8_t *dst = &cell_pixels[(py * VT100_TERMINAL_CELL_WIDTH + px) * 3u];
 
       dst[0] = color[0];
@@ -690,36 +703,38 @@ static void vt100_terminal_show_cursor(vt100_terminal_t *terminal) {
 
 static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
   for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
-    uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT];
     const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
-    uint8_t fg[3];
-    uint8_t bg[3];
-    const uint16_t cell_x = (uint16_t)(col * VT100_TERMINAL_CELL_WIDTH);
 
-    vt100_terminal_build_cell_row_masks(cell, row_masks);
-    vt100_terminal_resolve_colors(terminal, cell, false, fg, bg);
+    vt100_terminal_prepare_cell_render(terminal, cell, false, &g_render_row_cache[col]);
+  }
 
-    for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
-      const uint8_t row_mask = row_masks[py];
+  if (!ili9486l_begin_write(
+          terminal->origin_x,
+          (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),
+          VT100_TERMINAL_WIDTH_PIXELS,
+          VT100_TERMINAL_CELL_HEIGHT)) {
+    return;
+  }
+
+  for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
+    uint8_t *dst = g_scanline_buffer;
+
+    for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
+      const vt100_terminal_render_cache_t *render_data = &g_render_row_cache[col];
+      const uint8_t row_mask = render_data->row_masks[py];
 
       for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
         const bool pixel_on = (row_mask & (1u << px)) != 0u;
-        const uint8_t *color = pixel_on ? fg : bg;
-        uint8_t *dst = &g_row_buffer[((py * VT100_TERMINAL_WIDTH_PIXELS) + cell_x + px) * 3u];
-
+        const uint8_t *color = pixel_on ? render_data->fg : render_data->bg;
         dst[0] = color[0];
         dst[1] = color[1];
         dst[2] = color[2];
+        dst += 3;
       }
     }
-  }
 
-  ili9486l_draw_rgb666_wire_rect(
-      g_row_buffer,
-      terminal->origin_x,
-      (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),
-      VT100_TERMINAL_WIDTH_PIXELS,
-      VT100_TERMINAL_CELL_HEIGHT);
+    ili9486l_write_rgb666_wire_pixels(g_scanline_buffer, VT100_TERMINAL_WIDTH_PIXELS);
+  }
 }
 
 static void vt100_terminal_insert_lines(vt100_terminal_t *terminal, uint8_t count) {
