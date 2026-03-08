@@ -15,6 +15,10 @@ enum {
   VT100_STATE_ESC_G0,
   VT100_STATE_ESC_G1,
   VT100_STATE_ESC_HASH,
+  VT100_STATE_OSC,
+  VT100_STATE_OSC_ESC,
+  VT100_STATE_STR,
+  VT100_STATE_STR_ESC,
   VT100_STATE_VT52_CURSOR_ROW,
   VT100_STATE_VT52_CURSOR_COL,
 };
@@ -1545,12 +1549,16 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->csi_have_value = 0;
         terminal->csi_private = 0;
         terminal->csi_value = 0;
+      } else if (ch == ']') {
+        terminal->state = VT100_STATE_OSC;
       } else if (ch == '#') {
         terminal->state = VT100_STATE_ESC_HASH;
       } else if (ch == '(') {
         terminal->state = VT100_STATE_ESC_G0;
       } else if (ch == ')') {
         terminal->state = VT100_STATE_ESC_G1;
+      } else if (ch == 'P' || ch == 'X' || ch == '^' || ch == '_') {
+        terminal->state = VT100_STATE_STR;
       } else if (ch == '7') {
         terminal->saved_row = terminal->cursor_row;
         terminal->saved_col = terminal->cursor_col;
@@ -1611,6 +1619,28 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         vt100_terminal_dispatch_csi(terminal, ch);
         terminal->state = VT100_STATE_GROUND;
       }
+      break;
+
+    case VT100_STATE_OSC:
+      if (ch == '\a') {
+        terminal->state = VT100_STATE_GROUND;
+      } else if (ch == '\x1b') {
+        terminal->state = VT100_STATE_OSC_ESC;
+      }
+      break;
+
+    case VT100_STATE_OSC_ESC:
+      terminal->state = (ch == '\\') ? VT100_STATE_GROUND : VT100_STATE_OSC;
+      break;
+
+    case VT100_STATE_STR:
+      if (ch == '\x1b') {
+        terminal->state = VT100_STATE_STR_ESC;
+      }
+      break;
+
+    case VT100_STATE_STR_ESC:
+      terminal->state = (ch == '\\') ? VT100_STATE_GROUND : VT100_STATE_STR;
       break;
 
     case VT100_STATE_ESC_G0:

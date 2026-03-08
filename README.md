@@ -71,6 +71,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `ESC H` для установки tab stop в текущей колонке
 - `ESC ( 0`, `ESC ( B`, `ESC ( A`, `ESC ) 0`, `ESC ) B`, `ESC ) A`, `SO`, `SI` для `DEC Special Graphics` и `UK charset`
 - `VT52`-совместимость через `CSI ?2l` / `ESC <` и команды `ESC A/B/C/D/F/G/H/I/J/K/Y/Z`
+- `OSC`, `DCS`, `SOS`, `PM`, `APC` безопасно пропускаются до терминатора, чтобы не ломать parser state
 - `CSI A`, `B`, `C`, `D`, `E`, `F`, `G`, `H`, `I`, `S`, `T`, `Z`, `` ` ``, `a`, `b`, `d`, `e`, `f`
 - `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`, `h`, `l`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
@@ -125,6 +126,16 @@ python3 tools/png_to_logo.py logo.png --rotate cw
 ```bash
 bash tools/logo_from_magick.sh logo.png
 bash tools/logo_from_magick.sh logo.png cw
+```
+
+## Host tests
+
+Есть отдельные native tests для `VT100`-парсера, их можно гонять без `Pico SDK` и без железа:
+
+```bash
+cmake -S tests/host -B /tmp/ili9486l_lcd-build-host
+cmake --build /tmp/ili9486l_lcd-build-host -j4
+ctest --test-dir /tmp/ili9486l_lcd-build-host --output-on-failure
 ```
 
 ## Что делает пример
