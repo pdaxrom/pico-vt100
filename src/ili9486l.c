@@ -159,27 +159,19 @@ static void ili9486l_write_color_repeat(uint16_t color, uint32_t pixel_count) {
   ili9486l_write_rgb666_repeat(pixel, pixel_count);
 }
 
-void ili9486l_draw_rgb565_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h) {
+static void ili9486l_write_rgb565le_pixels(const uint8_t *pixels, size_t pixel_count) {
   uint8_t burst[64 * 3];
-  const uint8_t *src = bitmap;
-  uint32_t pixels_left;
+  const uint8_t *src = pixels;
 
-  if (bitmap == NULL || w == 0 || h == 0 || w > g_width || h > g_height) {
-    return;
-  }
-
-  pixels_left = (uint32_t)w * h;
-  ili9486l_set_address_window(0, 0, (uint16_t)(w - 1u), (uint16_t)(h - 1u));
   ili9486l_set_dc(1);
 
-  while (pixels_left > 0) {
-    const uint32_t chunk = pixels_left > 64u ? 64u : pixels_left;
+  while (pixel_count > 0) {
+    const size_t chunk = pixel_count > 64u ? 64u : pixel_count;
 
-    for (uint32_t i = 0; i < chunk; ++i) {
-      uint16_t color;
+    for (size_t i = 0; i < chunk; ++i) {
       uint8_t pixel[3];
+      const uint16_t color = (uint16_t)src[0] | (uint16_t)((uint16_t)src[1] << 8);
 
-      color = (uint16_t)src[0] | (uint16_t)((uint16_t)src[1] << 8);
       ili9486l_rgb565_to_rgb666(color, pixel);
       burst[i * 3u + 0] = pixel[0];
       burst[i * 3u + 1] = pixel[1];
@@ -188,8 +180,65 @@ void ili9486l_draw_rgb565_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h) 
     }
 
     spi_write_blocking(LCD_SPI_PORT, burst, chunk * 3u);
-    pixels_left -= chunk;
+    pixel_count -= chunk;
   }
+}
+
+bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  if (w == 0 || h == 0 || x >= g_width || y >= g_height) {
+    return false;
+  }
+
+  if ((uint32_t)x + w > g_width || (uint32_t)y + h > g_height) {
+    return false;
+  }
+
+  ili9486l_set_address_window(x, y, (uint16_t)(x + w - 1u), (uint16_t)(y + h - 1u));
+  return true;
+}
+
+void ili9486l_write_rgb565_pixels(const uint16_t *pixels, size_t pixel_count) {
+  uint8_t burst[64 * 3];
+  const uint16_t *src = pixels;
+
+  if (pixels == NULL || pixel_count == 0) {
+    return;
+  }
+
+  ili9486l_set_dc(1);
+
+  while (pixel_count > 0) {
+    const size_t chunk = pixel_count > 64u ? 64u : pixel_count;
+
+    for (size_t i = 0; i < chunk; ++i) {
+      uint8_t pixel[3];
+
+      ili9486l_rgb565_to_rgb666(src[i], pixel);
+      burst[i * 3u + 0] = pixel[0];
+      burst[i * 3u + 1] = pixel[1];
+      burst[i * 3u + 2] = pixel[2];
+    }
+
+    spi_write_blocking(LCD_SPI_PORT, burst, chunk * 3u);
+    src += chunk;
+    pixel_count -= chunk;
+  }
+}
+
+void ili9486l_draw_rgb565_rect(const uint16_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  if (bitmap == NULL || !ili9486l_begin_write(x, y, w, h)) {
+    return;
+  }
+
+  ili9486l_write_rgb565_pixels(bitmap, (size_t)w * h);
+}
+
+void ili9486l_draw_rgb565_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h) {
+  if (bitmap == NULL || !ili9486l_begin_write(0, 0, w, h)) {
+    return;
+  }
+
+  ili9486l_write_rgb565le_pixels(bitmap, (size_t)w * h);
 }
 
 uint16_t ili9486l_width(void) {

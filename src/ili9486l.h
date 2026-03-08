@@ -1,6 +1,8 @@
 #ifndef ILI9486L_H
 #define ILI9486L_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define LCD_NATIVE_WIDTH  320u
@@ -27,6 +29,9 @@ void ili9486l_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
 void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t r6, uint8_t g6, uint8_t b6);
 void ili9486l_fill_screen(uint16_t color);
+bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+void ili9486l_write_rgb565_pixels(const uint16_t *pixels, size_t pixel_count);
+void ili9486l_draw_rgb565_rect(const uint16_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void ili9486l_draw_rgb565_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h);
 void ili9486l_draw_char(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale);
 void ili9486l_draw_string(uint16_t x, uint16_t y, const char *text, uint16_t fg, uint16_t bg, uint8_t scale);

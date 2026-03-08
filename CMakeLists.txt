@@ -31,11 +31,18 @@ pico_sdk_init()
 add_executable(ili9486l_lcd
   src/font5x7.c
   src/ili9486l.c
+  src/jpeg_logo.c
+  src/logo_jpg.S
   src/main.c
+  src/tjpgd/tjpgd.c
 )
 
 target_include_directories(ili9486l_lcd PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/src
+)
+
+target_compile_definitions(ili9486l_lcd PRIVATE
+  LOGO_JPG_PATH=\"${CMAKE_CURRENT_LIST_DIR}/assets/logo.jpg\"
 )
 
 target_link_libraries(ili9486l_lcd PRIVATE

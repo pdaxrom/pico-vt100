@@ -1,18 +1,14 @@
 #include "ili9486l.h"
-#include "logo.h"
+#include "jpeg_logo.h"
 
 #include "pico/stdlib.h"
 
-#include <stddef.h>
-
 static void show_boot_logo(void) {
-  const size_t expected_size = (size_t)ili9486l_width() * ili9486l_height() * 2u;
-
-  if ((size_t)logo_raw_len != expected_size) {
+  if (!jpeg_logo_show()) {
+    ili9486l_fill_screen(LCD_COLOR_BLACK);
     return;
   }
 
-  ili9486l_draw_rgb565_bitmap(logo_raw, ili9486l_width(), ili9486l_height());
   sleep_ms(3000);
 }
 

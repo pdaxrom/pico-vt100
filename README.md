@@ -48,7 +48,15 @@ cmake --build .
 
 ## Конвертация логотипа
 
-Для генерации [src/logo.h](/Users/sash/Work/RPI-PICO/ili9486l_lcd/src/logo.h) добавлен скрипт [tools/png_to_logo.py](/Users/sash/Work/RPI-PICO/ili9486l_lcd/tools/png_to_logo.py). Он конвертирует изображение в `rgb565le` так, как ожидает драйвер.
+Boot logo теперь берётся напрямую из [assets/logo.jpg](/Users/sash/Work/RPI-PICO/ili9486l_lcd/assets/logo.jpg): файл линкуется в ELF как binary blob в `.rodata`, а на RP2040 декодируется встроенным `TJpgDec` небольшими блоками без полного framebuffer.
+
+Текущие требования:
+
+- формат: `baseline JPEG` (`progressive JPEG` не поддерживается декодером)
+- размер: ровно `480x320`
+- ориентация: уже landscape или подготовленная скриптом
+
+Для подготовки изображения оставлен скрипт [tools/png_to_logo.py](/Users/sash/Work/RPI-PICO/ili9486l_lcd/tools/png_to_logo.py). Он нормализует PNG/JPEG в baseline JPEG ассет.
 
 Нужна библиотека `Pillow`:
 
@@ -56,16 +64,16 @@ cmake --build .
 python3 -m pip install Pillow
 ```
 
-Пример для уже готовой картинки `480x320`:
+Пример для уже готовой картинки:
 
 ```bash
 python3 tools/png_to_logo.py logo.png
 ```
 
-Пример с поворотом в landscape и сохранением `raw` рядом:
+Пример с поворотом в landscape:
 
 ```bash
-python3 tools/png_to_logo.py logo.png --rotate cw --raw assets/logo.raw
+python3 tools/png_to_logo.py logo.png --rotate cw
 ```
 
 Для совместимости также обновлён [assets/convert.sh](/Users/sash/Work/RPI-PICO/ili9486l_lcd/assets/convert.sh):
@@ -87,10 +95,13 @@ bash tools/logo_from_magick.sh logo.png cw
 - Аппаратно сбрасывает дисплей через `GP11`
 - Переводит экран в `landscape` (`480x320`)
 - Настраивает ILI9486L на `18-bit` режим SPI
-- Показывает полноэкранный `RGB565` логотип 3 секунды
+- Показывает встроенный в ELF `JPEG` логотип 3 секунды
+- Декодирует логотип блоками прямо из flash без полного буфера кадра
 - Очищает экран и рисует несколько строк текста шрифтом `5x7`
 
 ## Ограничения
 
 - Встроенный шрифт ориентирован на цифры, латиницу и базовую пунктуацию.
+- Декодер поддерживает только `baseline JPEG`. Если сохранить логотип как `progressive JPEG`, boot logo не покажется.
+- Логотип сейчас ожидается размером ровно `480x320`, иначе код уйдёт в fallback с чёрным экраном перед следующими демо-экранами.
 - Драйвер сейчас настроен на порядок цветов `BGR`, потому что на этом модуле при `RGB` красный и синий оказываются перепутаны. Если у вашего экземпляра цвета наоборот корректны только в `RGB`, уберите бит `BGR` в `ili9486l_set_rotation()` в файле `src/ili9486l.c`.

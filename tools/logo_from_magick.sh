@@ -13,8 +13,7 @@ rotate="${2:-none}"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 project_dir="$(cd "$script_dir/.." && pwd)"
 tmp_png="$(mktemp /tmp/ili9486l_logo_XXXXXX.png)"
-raw_path="$project_dir/assets/logo.raw"
-header_path="$project_dir/src/logo.h"
+output_path="$project_dir/assets/logo.jpg"
 
 cleanup() {
   rm -f "$tmp_png"
@@ -41,6 +40,6 @@ case "$rotate" in
     ;;
 esac
 
-python3 "$project_dir/tools/png_to_logo.py" "$tmp_png" --raw "$raw_path" --header "$header_path"
+python3 "$project_dir/tools/png_to_logo.py" "$tmp_png" --output "$output_path"
 
-echo "Updated $header_path and $raw_path"
+echo "Updated $output_path"
