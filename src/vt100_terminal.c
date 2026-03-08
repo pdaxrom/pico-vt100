@@ -760,6 +760,42 @@ static void vt100_terminal_write_cell(vt100_terminal_t *terminal, const vt100_te
   vt100_terminal_advance(terminal);
 }
 
+static bool vt100_terminal_write_cell_fast(
+    vt100_terminal_t *terminal,
+    const vt100_terminal_cell_t *cell,
+    uint8_t *write_row,
+    uint8_t *write_col) {
+  if (cell == NULL) {
+    return false;
+  }
+
+  vt100_terminal_commit_wrap(terminal);
+  if (terminal->insert_mode) {
+    vt100_terminal_insert_chars(terminal, 1u);
+  }
+
+  if (write_row != NULL) {
+    *write_row = terminal->cursor_row;
+  }
+
+  if (write_col != NULL) {
+    *write_col = terminal->cursor_col;
+  }
+
+  vt100_terminal_set_cell(
+      terminal,
+      terminal->cursor_row,
+      terminal->cursor_col,
+      cell->ch,
+      cell->attr,
+      cell->style,
+      cell->charset);
+  terminal->last_printable = *cell;
+  terminal->last_printable_valid = true;
+  vt100_terminal_advance(terminal);
+  return true;
+}
+
 static void vt100_terminal_scroll_up_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom) {
   if (top >= bottom || bottom >= VT100_TERMINAL_ROWS) {
     return;
@@ -1345,6 +1381,43 @@ void vt100_terminal_set_output(vt100_terminal_t *terminal, vt100_terminal_output
 
 void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
   const unsigned char uch = (unsigned char)ch;
+  const uint8_t old_cursor_row = terminal->cursor_row;
+  const uint8_t old_cursor_col = terminal->cursor_col;
+
+  if (terminal->state == VT100_STATE_GROUND && uch >= 0x20u && uch != 0x7Fu) {
+    uint8_t write_row = terminal->cursor_row;
+    uint8_t write_col = terminal->cursor_col;
+    const vt100_terminal_cell_t cell = {
+        .ch = ch,
+        .attr = vt100_terminal_current_attr(terminal),
+        .style = vt100_terminal_current_style(terminal),
+        .charset = vt100_terminal_current_charset(terminal),
+    };
+    const bool wrote = vt100_terminal_write_cell_fast(terminal, &cell, &write_row, &write_col);
+    const bool cursor_moved = (old_cursor_row != terminal->cursor_row) || (old_cursor_col != terminal->cursor_col);
+
+    terminal->single_shift_pending = false;
+
+    if (!wrote) {
+      return;
+    }
+
+    if (!cursor_moved) {
+      vt100_terminal_render_cell_internal(terminal, write_row, write_col, terminal->cursor_visible);
+      return;
+    }
+
+    vt100_terminal_render_cell_internal(terminal, write_row, write_col, false);
+
+    if (old_cursor_row != write_row || old_cursor_col != write_col) {
+      vt100_terminal_render_cell_internal(terminal, old_cursor_row, old_cursor_col, false);
+    }
+
+    if (terminal->cursor_visible) {
+      vt100_terminal_render_cell_internal(terminal, terminal->cursor_row, terminal->cursor_col, true);
+    }
+    return;
+  }
 
   vt100_terminal_hide_cursor(terminal);
 

@@ -1,5 +1,11 @@
 # TODO
 
+## Rendering / performance
+
+- Batch contiguous printable runs in `GROUND` state and redraw them as row ranges instead of per-cell blits.
+- Optimize cursor-only redraw further so cursor moves do not rebuild and push more pixels than needed.
+- Measure terminal throughput on real hardware after the recent render-path changes and use that data to drive the next optimization pass.
+
 ## VT100 / VT52 features
 
 - Implement real `ESC #3`, `ESC #4`, `ESC #5`, `ESC #6` double-height / double-width line modes.
@@ -29,10 +35,11 @@
 
 ## Current local work
 
-- Review and commit the current local `DECSC/DECRC` mode-save changes and explicit `ESC #3/#4/#5/#6` safe no-op handling.
+- Review and commit the current local `vt100_terminal_putc()` fast printable-path cursor redraw optimization.
 
 ## Suggested order
 
+- Batch printable runs in the terminal hot path.
 - Add private `DSR` / mode query replies.
 - Add input encoding for cursor and keypad application modes.
 - Run `vttest` and iterate on the failures.
