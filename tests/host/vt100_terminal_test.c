@@ -8,6 +8,7 @@ enum {
   TEST_CHARSET_US = 0,
   TEST_CHARSET_UK = 1,
   TEST_CHARSET_DEC_SPECIAL = 2,
+  TEST_STYLE_BLINK = 1u << 3,
 };
 
 typedef struct {
@@ -186,6 +187,26 @@ static int test_esc_hash_3_to_6_are_noop(void) {
   return 0;
 }
 
+static int test_blink_tick_toggles_visibility(void) {
+  vt100_terminal_t terminal;
+
+  vt100_terminal_init(&terminal, 0u, 0u);
+  feed(&terminal, "\x1b[5mA");
+
+  CHECK((terminal.cells[0][0].style & TEST_STYLE_BLINK) != 0u);
+  CHECK(terminal.blink_visible);
+
+  vt100_terminal_tick(&terminal, VT100_TERMINAL_BLINK_INTERVAL_MS - 1u);
+  CHECK(terminal.blink_visible);
+
+  vt100_terminal_tick(&terminal, 1u);
+  CHECK(!terminal.blink_visible);
+
+  vt100_terminal_tick(&terminal, VT100_TERMINAL_BLINK_INTERVAL_MS);
+  CHECK(terminal.blink_visible);
+  return 0;
+}
+
 int main(void) {
   static const struct {
     const char *name;
@@ -200,6 +221,7 @@ int main(void) {
       {"decsc_decrc_restore_g2_g3", test_decsc_decrc_restore_g2_g3},
       {"decsc_decrc_restore_modes", test_decsc_decrc_restore_modes},
       {"esc_hash_3_to_6_are_noop", test_esc_hash_3_to_6_are_noop},
+      {"blink_tick_toggles_visibility", test_blink_tick_toggles_visibility},
   };
 
   for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {

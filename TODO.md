@@ -19,7 +19,6 @@
 - Add 8-bit C1 control forms such as `CSI`=`0x9B`, `OSC`=`0x9D`, etc.
 - Extend charset support beyond `US`, `UK`, `DEC Special`, `G0..G3`.
 - Implement a real input encoder for `DECCKM` and keypad application mode instead of storing flags only.
-- Add blink timer support for `SGR blink`.
 - Add scrollback support.
 - Add UTF-8 support.
 

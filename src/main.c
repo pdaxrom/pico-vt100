@@ -1,10 +1,13 @@
 #include "ili9486l.h"
-#include "jpeg_logo.h"
+#include "ili9486l_jpeg.h"
 #include "vt100_terminal.h"
 
 #include "pico/stdlib.h"
 
 #include <stdio.h>
+
+extern const uint8_t g_logo_jpg_start[];
+extern const uint8_t g_logo_jpg_end[];
 
 static void terminal_stdio_output(const char *data, size_t len, void *user_data) {
   (void)user_data;
@@ -15,7 +18,9 @@ static void terminal_stdio_output(const char *data, size_t len, void *user_data)
 }
 
 static void show_boot_logo(void) {
-  if (!jpeg_logo_show()) {
+  const size_t logo_size = (size_t)(g_logo_jpg_end - g_logo_jpg_start);
+
+  if (!ili9486l_jpeg_draw(g_logo_jpg_start, logo_size, 0u, 0u)) {
     ili9486l_fill_screen(LCD_COLOR_BLACK);
     return;
   }
@@ -242,6 +247,7 @@ static void draw_demo_screen(void) {
 int main(void) {
   static vt100_terminal_t terminal;
   uint16_t terminal_origin_y = 0;
+  uint32_t last_terminal_tick_ms = 0u;
 
   stdio_init_all();
   sleep_ms(1000);
@@ -258,11 +264,17 @@ int main(void) {
   vt100_terminal_write(&terminal, "Supported: CSI A/B/C/D/E/F/G/H/I/S/T/Z/`/a/b/d/e/f/J/K/L/M/@/P/X.\r\n");
   vt100_terminal_write(&terminal, "Plus: CSI m/r/n/c/g/h/l, ESC #8, DEC/UK/VT52, SS2/SS3, tab stops.\r\n");
   vt100_terminal_write(&terminal, "Modes: IRM, LMN, DECSCNM, DECAWM, DECOM, DECANM, DECSTBM, RI, cursor show/hide.\r\n");
+  vt100_terminal_write(&terminal, "Blink: feed elapsed ms into vt100_terminal_tick() to animate SGR 5.\r\n");
   vt100_terminal_write(&terminal, "\r\n");
   vt100_terminal_write(&terminal, "\x1b[32mREADY\x1b[0m> ");
+  last_terminal_tick_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
 
   while (true) {
     const int ch = getchar_timeout_us(0);
+    const uint32_t now_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
+
+    vt100_terminal_tick(&terminal, now_ms - last_terminal_tick_ms);
+    last_terminal_tick_ms = now_ms;
 
     if (ch != PICO_ERROR_TIMEOUT) {
       vt100_terminal_putc(&terminal, (char)ch);

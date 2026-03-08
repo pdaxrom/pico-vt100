@@ -310,6 +310,16 @@ static void vt100_terminal_dim_color(uint8_t color[3]) {
   color[2] >>= 1;
 }
 
+static bool vt100_terminal_row_has_blink(const vt100_terminal_t *terminal, uint8_t row) {
+  for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
+    if ((terminal->cells[row][col].style & VT100_STYLE_BLINK) != 0u) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static void vt100_terminal_emit(vt100_terminal_t *terminal, const char *data, size_t len) {
   if (terminal->output_fn == NULL || data == NULL || len == 0u) {
     return;
@@ -470,6 +480,10 @@ static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, cons
     vt100_terminal_swap_colors(fg, bg);
   }
 
+  if ((cell->style & VT100_STYLE_BLINK) != 0u && !terminal->blink_visible) {
+    vt100_terminal_copy_color(fg, bg);
+  }
+
   if ((cell->style & VT100_STYLE_INVISIBLE) != 0u) {
     vt100_terminal_copy_color(fg, bg);
   }
@@ -584,6 +598,25 @@ static void vt100_terminal_render_row_range(vt100_terminal_t *terminal, uint8_t 
 
 static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
   vt100_terminal_render_row_range(terminal, row, 0u, (uint8_t)(VT100_TERMINAL_COLS - 1u));
+}
+
+static void vt100_terminal_refresh_blink_rows(vt100_terminal_t *terminal) {
+  bool cursor_row_redrawn = false;
+
+  for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
+    if (!vt100_terminal_row_has_blink(terminal, row)) {
+      continue;
+    }
+
+    vt100_terminal_render_row(terminal, row);
+    if (terminal->cursor_visible && row == terminal->cursor_row) {
+      cursor_row_redrawn = true;
+    }
+  }
+
+  if (cursor_row_redrawn) {
+    vt100_terminal_show_cursor(terminal);
+  }
 }
 
 static void vt100_terminal_insert_lines(vt100_terminal_t *terminal, uint8_t count) {
@@ -1340,6 +1373,8 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->saved_vt52_graphics = terminal->vt52_graphics;
   terminal->single_shift_pending = false;
   terminal->last_printable_valid = false;
+  terminal->blink_elapsed_ms = 0u;
+  terminal->blink_visible = true;
   vt100_terminal_reset_tab_stops(terminal);
 
   for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
@@ -1377,6 +1412,23 @@ void vt100_terminal_set_output(vt100_terminal_t *terminal, vt100_terminal_output
 
   terminal->output_fn = output_fn;
   terminal->output_user_data = user_data;
+}
+
+void vt100_terminal_tick(vt100_terminal_t *terminal, uint32_t elapsed_ms) {
+  bool old_blink_visible = false;
+
+  if (terminal == NULL || elapsed_ms == 0u) {
+    return;
+  }
+
+  old_blink_visible = terminal->blink_visible;
+  terminal->blink_elapsed_ms += elapsed_ms;
+  terminal->blink_visible =
+      ((terminal->blink_elapsed_ms / VT100_TERMINAL_BLINK_INTERVAL_MS) & 1u) == 0u;
+
+  if (terminal->blink_visible != old_blink_visible) {
+    vt100_terminal_refresh_blink_rows(terminal);
+  }
 }
 
 void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {

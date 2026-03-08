@@ -17,6 +17,7 @@ add_executable(vt100_terminal_tests
 )
 
 target_include_directories(vt100_terminal_tests PRIVATE
+  ../../include
   ../../src
 )
 

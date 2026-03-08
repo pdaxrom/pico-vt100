@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define LCD_NATIVE_WIDTH  320u
 #define LCD_NATIVE_HEIGHT 480u
 
@@ -45,5 +49,9 @@ void ili9486l_draw_rgb666_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h);
 void ili9486l_draw_rgb888_as_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale);
 void ili9486l_draw_string(uint16_t x, uint16_t y, const char *text, lcd_color_t fg, lcd_color_t bg, uint8_t scale);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

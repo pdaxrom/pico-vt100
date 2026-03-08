@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define VT100_TERMINAL_COLS 80u
 #define VT100_TERMINAL_ROWS 35u
 #define VT100_TERMINAL_CELL_WIDTH 6u
@@ -14,6 +18,7 @@
 #define VT100_TERMINAL_GLYPH_Y_OFFSET 1u
 #define VT100_TERMINAL_WIDTH_PIXELS (VT100_TERMINAL_COLS * VT100_TERMINAL_CELL_WIDTH)
 #define VT100_TERMINAL_HEIGHT_PIXELS (VT100_TERMINAL_ROWS * VT100_TERMINAL_CELL_HEIGHT)
+#define VT100_TERMINAL_BLINK_INTERVAL_MS 500u
 
 typedef void (*vt100_terminal_output_fn)(const char *data, size_t len, void *user_data);
 
@@ -78,8 +83,10 @@ typedef struct {
   bool saved_vt52_graphics;
   bool single_shift_pending;
   bool last_printable_valid;
+  bool blink_visible;
   vt100_terminal_output_fn output_fn;
   void *output_user_data;
+  uint32_t blink_elapsed_ms;
   bool tab_stops[VT100_TERMINAL_COLS];
   vt100_terminal_cell_t cells[VT100_TERMINAL_ROWS][VT100_TERMINAL_COLS];
   vt100_terminal_cell_t last_printable;
@@ -90,7 +97,12 @@ void vt100_terminal_init(vt100_terminal_t *terminal, uint16_t origin_x, uint16_t
 void vt100_terminal_set_output(vt100_terminal_t *terminal, vt100_terminal_output_fn output_fn, void *user_data);
 void vt100_terminal_reset(vt100_terminal_t *terminal);
 void vt100_terminal_putc(vt100_terminal_t *terminal, char ch);
+void vt100_terminal_tick(vt100_terminal_t *terminal, uint32_t elapsed_ms);
 void vt100_terminal_write(vt100_terminal_t *terminal, const char *text);
 void vt100_terminal_render(vt100_terminal_t *terminal);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
