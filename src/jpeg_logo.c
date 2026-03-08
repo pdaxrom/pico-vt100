@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define LOGO_JPEG_WORKBUF_SIZE 3584u
+#define LOGO_JPEG_WORKBUF_SIZE 4096u
 
 extern const uint8_t g_logo_jpg_start[];
 extern const uint8_t g_logo_jpg_end[];
@@ -41,8 +41,8 @@ static size_t jpeg_logo_input(JDEC *jd, uint8_t *buffer, size_t bytes_requested)
 static int jpeg_logo_output(JDEC *jd, void *bitmap, JRECT *rect) {
   (void)jd;
 
-  ili9486l_draw_rgb565_rect(
-      (const uint16_t *)bitmap,
+  ili9486l_draw_rgb888_as_rgb666_rect(
+      (const uint8_t *)bitmap,
       rect->left,
       rect->top,
       (uint16_t)(rect->right - rect->left + 1u),

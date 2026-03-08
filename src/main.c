@@ -14,13 +14,13 @@ static void show_boot_logo(void) {
 
 static void draw_rgb_gradient_strip(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   static const uint8_t stops[][3] = {
-    {0xFF, 0x00, 0x00},
-    {0xFF, 0x80, 0x00},
-    {0xFF, 0xFF, 0x00},
-    {0x00, 0xFF, 0x00},
-    {0x00, 0xFF, 0xFF},
-    {0x00, 0x00, 0xFF},
-    {0xB0, 0x00, 0xFF},
+    {63u, 0u, 0u},
+    {63u, 32u, 0u},
+    {63u, 63u, 0u},
+    {0u, 63u, 0u},
+    {0u, 63u, 63u},
+    {0u, 0u, 63u},
+    {44u, 0u, 63u},
   };
   const uint16_t max_phase = (uint16_t)((sizeof(stops) / sizeof(stops[0]) - 1u) * 255u);
 
@@ -51,7 +51,7 @@ static void draw_rgb_gradient_strip(uint16_t x, uint16_t y, uint16_t w, uint16_t
     green = (uint8_t)(((uint16_t)stops[segment][1] * (255u - mix) + (uint16_t)stops[segment + 1u][1] * mix) / 255u);
     blue = (uint8_t)(((uint16_t)stops[segment][2] * (255u - mix) + (uint16_t)stops[segment + 1u][2] * mix) / 255u);
 
-    ili9486l_fill_rect((uint16_t)(x + i), y, 1, h, LCD_RGB565(red, green, blue));
+    ili9486l_fill_rect_rgb666((uint16_t)(x + i), y, 1, h, red, green, blue);
   }
 }
 
@@ -87,12 +87,12 @@ static void draw_channel_gradient_strip(uint16_t x, uint16_t y, uint16_t w, uint
 }
 
 static void show_color_test_screen(void) {
-  const uint16_t background = LCD_RGB565(0x08, 0x10, 0x16);
-  const uint16_t title_bg = LCD_RGB565(0x12, 0x18, 0x20);
-  const uint16_t frame = LCD_RGB565(0x03, 0x06, 0x0A);
-  const uint16_t red_label = LCD_RGB565(0xFF, 0x70, 0x70);
-  const uint16_t green_label = LCD_RGB565(0x70, 0xFF, 0x90);
-  const uint16_t blue_label = LCD_RGB565(0x70, 0xA0, 0xFF);
+  const lcd_color_t background = LCD_RGB666(0x02, 0x04, 0x05);
+  const lcd_color_t title_bg = LCD_RGB666(0x04, 0x06, 0x08);
+  const lcd_color_t frame = LCD_RGB666(0x00, 0x01, 0x02);
+  const lcd_color_t red_label = LCD_RGB666(0x3F, 0x1C, 0x1C);
+  const lcd_color_t green_label = LCD_RGB666(0x1C, 0x3F, 0x24);
+  const lcd_color_t blue_label = LCD_RGB666(0x1C, 0x28, 0x3F);
 
   ili9486l_fill_screen(background);
   ili9486l_fill_rect(10, 10, 460, 34, title_bg);
@@ -125,10 +125,10 @@ static void show_color_test_screen(void) {
 }
 
 static void draw_demo_screen(void) {
-  const uint16_t background = LCD_RGB565(0x08, 0x12, 0x18);
-  const uint16_t panel = LCD_RGB565(0x10, 0x20, 0x28);
-  const uint16_t accent = LCD_RGB565(0x30, 0x14, 0x00);
-  const uint16_t strip_frame = LCD_RGB565(0x05, 0x08, 0x0C);
+  const lcd_color_t background = LCD_RGB666(0x02, 0x04, 0x06);
+  const lcd_color_t panel = LCD_RGB666(0x04, 0x08, 0x0A);
+  const lcd_color_t accent = LCD_RGB666(0x0C, 0x05, 0x00);
+  const lcd_color_t strip_frame = LCD_RGB666(0x01, 0x02, 0x03);
 
   ili9486l_fill_screen(background);
 

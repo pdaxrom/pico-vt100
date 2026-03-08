@@ -101,21 +101,16 @@ static void ili9486l_hard_reset(void) {
   sleep_ms(150);
 }
 
-static inline void ili9486l_pack_rgb666(uint8_t r6, uint8_t g6, uint8_t b6, uint8_t out[3]) {
-  out[0] = (uint8_t)((r6 & 0x3Fu) << 2);
-  out[1] = (uint8_t)((g6 & 0x3Fu) << 2);
-  out[2] = (uint8_t)((b6 & 0x3Fu) << 2);
+static inline void ili9486l_pack_rgb666(uint8_t red, uint8_t green, uint8_t blue, uint8_t out[3]) {
+  out[0] = (uint8_t)((red & 0x3Fu) << 2);
+  out[1] = (uint8_t)((green & 0x3Fu) << 2);
+  out[2] = (uint8_t)((blue & 0x3Fu) << 2);
 }
 
-static inline void ili9486l_rgb565_to_rgb666(uint16_t color, uint8_t out[3]) {
-  const uint8_t r5 = (uint8_t)((color >> 11) & 0x1Fu);
-  const uint8_t g6 = (uint8_t)((color >> 5) & 0x3Fu);
-  const uint8_t b5 = (uint8_t)(color & 0x1Fu);
-
-  const uint8_t r6 = (uint8_t)((r5 << 1) | (r5 >> 4));
-  const uint8_t b6 = (uint8_t)((b5 << 1) | (b5 >> 4));
-
-  ili9486l_pack_rgb666(r6, g6, b6, out);
+static inline void ili9486l_color_to_rgb666(lcd_color_t color, uint8_t out[3]) {
+  out[0] = (uint8_t)(((color >> 12) & 0x3Fu) << 2);
+  out[1] = (uint8_t)(((color >> 6) & 0x3Fu) << 2);
+  out[2] = (uint8_t)((color & 0x3Fu) << 2);
 }
 
 static void ili9486l_set_address_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
@@ -152,36 +147,11 @@ static void ili9486l_write_rgb666_repeat(const uint8_t pixel[3], uint32_t pixel_
   }
 }
 
-static void ili9486l_write_color_repeat(uint16_t color, uint32_t pixel_count) {
+static void ili9486l_write_color_repeat(lcd_color_t color, uint32_t pixel_count) {
   uint8_t pixel[3];
 
-  ili9486l_rgb565_to_rgb666(color, pixel);
+  ili9486l_color_to_rgb666(color, pixel);
   ili9486l_write_rgb666_repeat(pixel, pixel_count);
-}
-
-static void ili9486l_write_rgb565le_pixels(const uint8_t *pixels, size_t pixel_count) {
-  uint8_t burst[64 * 3];
-  const uint8_t *src = pixels;
-
-  ili9486l_set_dc(1);
-
-  while (pixel_count > 0) {
-    const size_t chunk = pixel_count > 64u ? 64u : pixel_count;
-
-    for (size_t i = 0; i < chunk; ++i) {
-      uint8_t pixel[3];
-      const uint16_t color = (uint16_t)src[0] | (uint16_t)((uint16_t)src[1] << 8);
-
-      ili9486l_rgb565_to_rgb666(color, pixel);
-      burst[i * 3u + 0] = pixel[0];
-      burst[i * 3u + 1] = pixel[1];
-      burst[i * 3u + 2] = pixel[2];
-      src += 2;
-    }
-
-    spi_write_blocking(LCD_SPI_PORT, burst, chunk * 3u);
-    pixel_count -= chunk;
-  }
 }
 
 bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
@@ -197,9 +167,9 @@ bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   return true;
 }
 
-void ili9486l_write_rgb565_pixels(const uint16_t *pixels, size_t pixel_count) {
+void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
   uint8_t burst[64 * 3];
-  const uint16_t *src = pixels;
+  const uint8_t *src = pixels;
 
   if (pixels == NULL || pixel_count == 0) {
     return;
@@ -211,34 +181,64 @@ void ili9486l_write_rgb565_pixels(const uint16_t *pixels, size_t pixel_count) {
     const size_t chunk = pixel_count > 64u ? 64u : pixel_count;
 
     for (size_t i = 0; i < chunk; ++i) {
-      uint8_t pixel[3];
-
-      ili9486l_rgb565_to_rgb666(src[i], pixel);
-      burst[i * 3u + 0] = pixel[0];
-      burst[i * 3u + 1] = pixel[1];
-      burst[i * 3u + 2] = pixel[2];
+      burst[i * 3u + 0] = (uint8_t)((src[0] & 0x3Fu) << 2);
+      burst[i * 3u + 1] = (uint8_t)((src[1] & 0x3Fu) << 2);
+      burst[i * 3u + 2] = (uint8_t)((src[2] & 0x3Fu) << 2);
+      src += 3;
     }
 
     spi_write_blocking(LCD_SPI_PORT, burst, chunk * 3u);
-    src += chunk;
     pixel_count -= chunk;
   }
 }
 
-void ili9486l_draw_rgb565_rect(const uint16_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+void ili9486l_write_rgb888_as_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
+  uint8_t burst[64 * 3];
+  const uint8_t *src = pixels;
+
+  if (pixels == NULL || pixel_count == 0) {
+    return;
+  }
+
+  ili9486l_set_dc(1);
+
+  while (pixel_count > 0) {
+    const size_t chunk = pixel_count > 64u ? 64u : pixel_count;
+
+    for (size_t i = 0; i < chunk; ++i) {
+      burst[i * 3u + 0] = (uint8_t)(src[0] & 0xFCu);
+      burst[i * 3u + 1] = (uint8_t)(src[1] & 0xFCu);
+      burst[i * 3u + 2] = (uint8_t)(src[2] & 0xFCu);
+      src += 3;
+    }
+
+    spi_write_blocking(LCD_SPI_PORT, burst, chunk * 3u);
+    pixel_count -= chunk;
+  }
+}
+
+void ili9486l_draw_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   if (bitmap == NULL || !ili9486l_begin_write(x, y, w, h)) {
     return;
   }
 
-  ili9486l_write_rgb565_pixels(bitmap, (size_t)w * h);
+  ili9486l_write_rgb666_pixels(bitmap, (size_t)w * h);
 }
 
-void ili9486l_draw_rgb565_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h) {
+void ili9486l_draw_rgb666_bitmap(const uint8_t *bitmap, uint16_t w, uint16_t h) {
   if (bitmap == NULL || !ili9486l_begin_write(0, 0, w, h)) {
     return;
   }
 
-  ili9486l_write_rgb565le_pixels(bitmap, (size_t)w * h);
+  ili9486l_write_rgb666_pixels(bitmap, (size_t)w * h);
+}
+
+void ili9486l_draw_rgb888_as_rgb666_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+  if (bitmap == NULL || !ili9486l_begin_write(x, y, w, h)) {
+    return;
+  }
+
+  ili9486l_write_rgb888_as_rgb666_pixels(bitmap, (size_t)w * h);
 }
 
 uint16_t ili9486l_width(void) {
@@ -314,6 +314,7 @@ void ili9486l_init(void) {
   sleep_ms(120);
 
   {
+    /* ILI9486L stays in 18-bit SPI mode; regular drawing uses RGB666, JPEG paths truncate RGB888 to top 6 bits. */
     const uint8_t pixel_format = 0x66;
     ili9486l_write_command_data(0x3A, &pixel_format, 1);
   }
@@ -328,7 +329,7 @@ void ili9486l_init(void) {
   ili9486l_fill_screen(LCD_COLOR_BLACK);
 }
 
-void ili9486l_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
+void ili9486l_draw_pixel(uint16_t x, uint16_t y, lcd_color_t color) {
   if (x >= g_width || y >= g_height) {
     return;
   }
@@ -337,7 +338,7 @@ void ili9486l_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
   ili9486l_write_color_repeat(color, 1);
 }
 
-void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, lcd_color_t color) {
   if (w == 0 || h == 0 || x >= g_width || y >= g_height) {
     return;
   }
@@ -353,7 +354,7 @@ void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t
   ili9486l_write_color_repeat(color, (uint32_t)w * h);
 }
 
-void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t r6, uint8_t g6, uint8_t b6) {
+void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t red, uint8_t green, uint8_t blue) {
   uint8_t pixel[3];
 
   if (w == 0 || h == 0 || x >= g_width || y >= g_height) {
@@ -367,16 +368,16 @@ void ili9486l_fill_rect_rgb666(uint16_t x, uint16_t y, uint16_t w, uint16_t h, u
     h = (uint16_t)(g_height - y);
   }
 
-  ili9486l_pack_rgb666(r6, g6, b6, pixel);
+  ili9486l_pack_rgb666(red, green, blue, pixel);
   ili9486l_set_address_window(x, y, (uint16_t)(x + w - 1u), (uint16_t)(y + h - 1u));
   ili9486l_write_rgb666_repeat(pixel, (uint32_t)w * h);
 }
 
-void ili9486l_fill_screen(uint16_t color) {
+void ili9486l_fill_screen(lcd_color_t color) {
   ili9486l_fill_rect(0, 0, g_width, g_height, color);
 }
 
-void ili9486l_draw_char(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale) {
+void ili9486l_draw_char(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
   uint8_t rows[7];
 
   if (scale == 0 || x >= g_width || y >= g_height) {
@@ -395,7 +396,7 @@ void ili9486l_draw_char(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg
   }
 }
 
-void ili9486l_draw_string(uint16_t x, uint16_t y, const char *text, uint16_t fg, uint16_t bg, uint8_t scale) {
+void ili9486l_draw_string(uint16_t x, uint16_t y, const char *text, lcd_color_t fg, lcd_color_t bg, uint8_t scale) {
   const uint16_t start_x = x;
   const uint16_t advance_x = (uint16_t)(6u * scale);
   const uint16_t advance_y = (uint16_t)(8u * scale);
