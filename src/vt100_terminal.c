@@ -64,14 +64,16 @@ static const uint8_t k_vt100_palette[16][3] = {
 };
 
 typedef struct {
-  uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT];
+  const uint8_t *row_masks;
   uint8_t fg[3];
   uint8_t bg[3];
+  bool underline;
 } vt100_terminal_render_cache_t;
 
 static uint8_t g_scanline_buffer[VT100_TERMINAL_WIDTH_PIXELS * 3u];
 static vt100_terminal_render_cache_t g_render_row_cache[VT100_TERMINAL_COLS];
 static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row);
+static void vt100_terminal_render_row_range(vt100_terminal_t *terminal, uint8_t row, uint8_t col_start, uint8_t col_end);
 static void vt100_terminal_scroll_up_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom);
 static void vt100_terminal_scroll_down_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom);
 static void vt100_terminal_commit_wrap(vt100_terminal_t *terminal);
@@ -413,7 +415,7 @@ static const uint8_t *vt100_terminal_get_dec_special_row_masks(char ch) {
   }
 }
 
-static void vt100_terminal_build_cell_row_masks(const vt100_terminal_cell_t *cell, uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT]) {
+static const uint8_t *vt100_terminal_get_cell_row_masks(const vt100_terminal_cell_t *cell) {
   const char ch = (char)vt100_terminal_sanitize_char(cell->ch);
   const uint8_t *builtin_rows = NULL;
 
@@ -438,11 +440,7 @@ static void vt100_terminal_build_cell_row_masks(const vt100_terminal_cell_t *cel
       break;
   }
 
-  memcpy(row_masks, builtin_rows, VT100_TERMINAL_CELL_HEIGHT);
-
-  if ((cell->style & VT100_STYLE_UNDERLINE) != 0u) {
-    row_masks[VT100_TERMINAL_CELL_HEIGHT - 1u] = (uint8_t)((1u << VT100_TERMINAL_GLYPH_WIDTH) - 1u);
-  }
+  return builtin_rows;
 }
 
 static void vt100_terminal_resolve_colors(const vt100_terminal_t *terminal, const vt100_terminal_cell_t *cell, bool invert, uint8_t fg[3], uint8_t bg[3]) {
@@ -485,7 +483,8 @@ static void vt100_terminal_prepare_cell_render(
     const vt100_terminal_cell_t *cell,
     bool invert,
     vt100_terminal_render_cache_t *render_data) {
-  vt100_terminal_build_cell_row_masks(cell, render_data->row_masks);
+  render_data->row_masks = vt100_terminal_get_cell_row_masks(cell);
+  render_data->underline = (cell->style & VT100_STYLE_UNDERLINE) != 0u;
   vt100_terminal_resolve_colors(terminal, cell, invert, render_data->fg, render_data->bg);
 }
 
@@ -497,7 +496,10 @@ static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal
   vt100_terminal_prepare_cell_render(terminal, cell, invert, &render_data);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
-    const uint8_t row_mask = render_data.row_masks[py];
+    const uint8_t row_mask = (uint8_t)(render_data.row_masks[py] |
+                                       ((render_data.underline && py == (VT100_TERMINAL_CELL_HEIGHT - 1u))
+                                            ? ((1u << VT100_TERMINAL_GLYPH_WIDTH) - 1u)
+                                            : 0u));
 
     for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
       const bool pixel_on = (row_mask & (1u << px)) != 0u;
@@ -534,17 +536,24 @@ static void vt100_terminal_show_cursor(vt100_terminal_t *terminal) {
   vt100_terminal_render_cell_internal(terminal, terminal->cursor_row, terminal->cursor_col, true);
 }
 
-static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
-  for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
+static void vt100_terminal_render_row_range(vt100_terminal_t *terminal, uint8_t row, uint8_t col_start, uint8_t col_end) {
+  const uint16_t pixel_x = (uint16_t)(terminal->origin_x + col_start * VT100_TERMINAL_CELL_WIDTH);
+  const uint16_t pixel_w = (uint16_t)((uint16_t)(col_end - col_start + 1u) * VT100_TERMINAL_CELL_WIDTH);
+
+  if (row >= VT100_TERMINAL_ROWS || col_start > col_end || col_end >= VT100_TERMINAL_COLS) {
+    return;
+  }
+
+  for (uint8_t col = col_start; col <= col_end; ++col) {
     const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
 
     vt100_terminal_prepare_cell_render(terminal, cell, false, &g_render_row_cache[col]);
   }
 
   if (!ili9486l_begin_write(
-          terminal->origin_x,
+          pixel_x,
           (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),
-          VT100_TERMINAL_WIDTH_PIXELS,
+          pixel_w,
           VT100_TERMINAL_CELL_HEIGHT)) {
     return;
   }
@@ -552,9 +561,12 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
     uint8_t *dst = g_scanline_buffer;
 
-    for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
+    for (uint8_t col = col_start; col <= col_end; ++col) {
       const vt100_terminal_render_cache_t *render_data = &g_render_row_cache[col];
-      const uint8_t row_mask = render_data->row_masks[py];
+      const uint8_t row_mask = (uint8_t)(render_data->row_masks[py] |
+                                         ((render_data->underline && py == (VT100_TERMINAL_CELL_HEIGHT - 1u))
+                                              ? ((1u << VT100_TERMINAL_GLYPH_WIDTH) - 1u)
+                                              : 0u));
 
       for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
         const bool pixel_on = (row_mask & (1u << px)) != 0u;
@@ -566,8 +578,12 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
       }
     }
 
-    ili9486l_write_rgb666_wire_pixels(g_scanline_buffer, VT100_TERMINAL_WIDTH_PIXELS);
+    ili9486l_write_rgb666_wire_pixels(g_scanline_buffer, pixel_w);
   }
+}
+
+static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
+  vt100_terminal_render_row_range(terminal, row, 0u, (uint8_t)(VT100_TERMINAL_COLS - 1u));
 }
 
 static void vt100_terminal_insert_lines(vt100_terminal_t *terminal, uint8_t count) {
@@ -660,7 +676,11 @@ static void vt100_terminal_insert_chars(vt100_terminal_t *terminal, uint8_t coun
     terminal->cells[terminal->cursor_row][col] = blank;
   }
 
-  vt100_terminal_render_row(terminal, terminal->cursor_row);
+  vt100_terminal_render_row_range(
+      terminal,
+      terminal->cursor_row,
+      terminal->cursor_col,
+      (uint8_t)(VT100_TERMINAL_COLS - 1u));
 }
 
 static void vt100_terminal_delete_chars(vt100_terminal_t *terminal, uint8_t count) {
@@ -686,7 +706,11 @@ static void vt100_terminal_delete_chars(vt100_terminal_t *terminal, uint8_t coun
     terminal->cells[terminal->cursor_row][col] = blank;
   }
 
-  vt100_terminal_render_row(terminal, terminal->cursor_row);
+  vt100_terminal_render_row_range(
+      terminal,
+      terminal->cursor_row,
+      terminal->cursor_col,
+      (uint8_t)(VT100_TERMINAL_COLS - 1u));
 }
 
 static void vt100_terminal_erase_chars(vt100_terminal_t *terminal, uint8_t count) {
@@ -705,7 +729,11 @@ static void vt100_terminal_erase_chars(vt100_terminal_t *terminal, uint8_t count
       (uint8_t)(terminal->cursor_col + count - 1u),
       vt100_terminal_current_attr(terminal),
       vt100_terminal_current_style(terminal));
-  vt100_terminal_render_row(terminal, terminal->cursor_row);
+  vt100_terminal_render_row_range(
+      terminal,
+      terminal->cursor_row,
+      terminal->cursor_col,
+      (uint8_t)(terminal->cursor_col + count - 1u));
 }
 
 static void vt100_terminal_write_cell(vt100_terminal_t *terminal, const vt100_terminal_cell_t *cell) {
@@ -869,7 +897,11 @@ static void vt100_terminal_erase_display(vt100_terminal_t *terminal, uint16_t mo
 
   if (mode == 0u) {
     vt100_terminal_fill_range(terminal, terminal->cursor_row, terminal->cursor_col, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
-    vt100_terminal_render_row(terminal, terminal->cursor_row);
+    vt100_terminal_render_row_range(
+        terminal,
+        terminal->cursor_row,
+        terminal->cursor_col,
+        (uint8_t)(VT100_TERMINAL_COLS - 1u));
     for (uint8_t row = (uint8_t)(terminal->cursor_row + 1u); row < VT100_TERMINAL_ROWS; ++row) {
       vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
       vt100_terminal_render_row(terminal, row);
@@ -883,7 +915,7 @@ static void vt100_terminal_erase_display(vt100_terminal_t *terminal, uint16_t mo
       vt100_terminal_render_row(terminal, row);
     }
     vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, terminal->cursor_col, attr, style);
-    vt100_terminal_render_row(terminal, terminal->cursor_row);
+    vt100_terminal_render_row_range(terminal, terminal->cursor_row, 0u, terminal->cursor_col);
   }
 }
 
@@ -893,13 +925,18 @@ static void vt100_terminal_erase_line(vt100_terminal_t *terminal, uint16_t mode)
 
   if (mode == 2u) {
     vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
+    vt100_terminal_render_row(terminal, terminal->cursor_row);
   } else if (mode == 1u) {
     vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, terminal->cursor_col, attr, style);
+    vt100_terminal_render_row_range(terminal, terminal->cursor_row, 0u, terminal->cursor_col);
   } else {
     vt100_terminal_fill_range(terminal, terminal->cursor_row, terminal->cursor_col, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
+    vt100_terminal_render_row_range(
+        terminal,
+        terminal->cursor_row,
+        terminal->cursor_col,
+        (uint8_t)(VT100_TERMINAL_COLS - 1u));
   }
-
-  vt100_terminal_render_row(terminal, terminal->cursor_row);
 }
 
 static void vt100_terminal_apply_sgr(vt100_terminal_t *terminal) {
