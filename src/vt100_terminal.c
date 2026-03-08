@@ -929,6 +929,25 @@ static void vt100_terminal_dispatch_private_csi(vt100_terminal_t *terminal, char
   }
 }
 
+static void vt100_terminal_dispatch_mode_csi(vt100_terminal_t *terminal, char final_char) {
+  const bool set_mode = final_char == 'h';
+
+  if (final_char != 'h' && final_char != 'l') {
+    return;
+  }
+
+  for (uint8_t i = 0; i < terminal->csi_param_count; ++i) {
+    switch (terminal->csi_params[i]) {
+      case 4u:
+        terminal->insert_mode = set_mode;
+        break;
+      case 20u:
+        terminal->newline_mode = set_mode;
+        break;
+    }
+  }
+}
+
 static void vt100_terminal_dispatch_csi(vt100_terminal_t *terminal, char final_char) {
   const uint16_t first = vt100_terminal_param_or(terminal, 0, 1u);
   const uint16_t second = vt100_terminal_param_or(terminal, 1, 1u);
@@ -1021,6 +1040,10 @@ static void vt100_terminal_dispatch_csi(vt100_terminal_t *terminal, char final_c
         terminal->tab_stops[terminal->cursor_col] = false;
       }
       break;
+    case 'h':
+    case 'l':
+      vt100_terminal_dispatch_mode_csi(terminal, final_char);
+      break;
     case 'n':
       if (vt100_terminal_param_or(terminal, 0, 0u) == 5u) {
         vt100_terminal_emit_device_status(terminal, 0u);
@@ -1093,6 +1116,8 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->csi_value = 0;
   terminal->autowrap = true;
   terminal->wrap_pending = false;
+  terminal->insert_mode = false;
+  terminal->newline_mode = false;
   terminal->origin_mode = false;
   terminal->saved_origin_mode = terminal->origin_mode;
   vt100_terminal_reset_tab_stops(terminal);
@@ -1162,6 +1187,9 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         case '\n':
         case '\v':
         case '\f':
+          if (terminal->newline_mode) {
+            terminal->cursor_col = 0u;
+          }
           vt100_terminal_newline(terminal);
           break;
         case '\r':
@@ -1177,6 +1205,9 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         default:
           if ((unsigned char)ch >= 0x20u) {
             vt100_terminal_commit_wrap(terminal);
+            if (terminal->insert_mode) {
+              vt100_terminal_insert_chars(terminal, 1u);
+            }
             vt100_terminal_set_cell(
                 terminal,
                 terminal->cursor_row,

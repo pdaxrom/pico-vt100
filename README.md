@@ -70,8 +70,10 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `ESC H` для установки tab stop в текущей колонке
 - `ESC ( 0`, `ESC ( B`, `ESC ) 0`, `ESC ) B`, `SO`, `SI` для `DEC Special Graphics`
 - `CSI A`, `B`, `C`, `D`, `G`, `H`, `f`, `d`
-- `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`
+- `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`, `h`, `l`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
+- `CSI 4h` / `CSI 4l` для `IRM` (`insert/replace mode`)
+- `CSI 20h` / `CSI 20l` для `LMN` (`new line mode` / `line feed mode`)
 - `CSI ?7h` / `CSI ?7l` для `DECAWM` (`autowrap`)
 - `CSI ?6h` / `CSI ?6l` для `DECOM` (`origin mode`)
 - `CSI ?25h` / `CSI ?25l` для показа/скрытия курсора
