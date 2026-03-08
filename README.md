@@ -69,7 +69,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `ESC 7`, `ESC 8`, `ESC c`, `ESC D`, `ESC E`, `ESC M`, `ESC Z`, `ESC =`, `ESC >`, `ESC N`, `ESC O`
 - `ESC #8` для `DECALN` (`screen alignment display`)
 - `ESC H` для установки tab stop в текущей колонке
-- `ESC ( 0`, `ESC ( B`, `ESC ( A`, `ESC ) 0`, `ESC ) B`, `ESC ) A`, `SO`, `SI` для `DEC Special Graphics` и `UK charset`
+- `ESC ( 0`, `ESC ( B`, `ESC ( A`, `ESC ) 0`, `ESC ) B`, `ESC ) A`, `ESC * 0/B/A`, `ESC + 0/B/A`, `SO`, `SI` для `DEC Special Graphics`, `UK charset`, `G0..G3`
 - `VT52`-совместимость через `CSI ?2l` / `ESC <` и команды `ESC A/B/C/D/F/G/H/I/J/K/Y/Z`
 - `OSC`, `DCS`, `SOS`, `PM`, `APC` безопасно пропускаются до терминатора, чтобы не ломать parser state
 - `CSI A`, `B`, `C`, `D`, `E`, `F`, `G`, `H`, `I`, `S`, `T`, `Z`, `` ` ``, `a`, `b`, `d`, `e`, `f`
@@ -85,7 +85,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `DA` / `DSR` ответы отправляются обратно через `stdio`
 - tab stops по умолчанию стоят через каждые `8` колонок
 - `CSI b` повторяет предыдущий печатный символ (`REP`)
-- `ESC N` / `ESC O` сейчас реализованы best-effort: оба делают single-shift на `G1` для следующего печатного символа
+- `ESC N` и `ESC O` делают single-shift на `G2` и `G3` соответственно для следующего печатного символа
 - `CAN` / `SUB` отменяют текущую escape-последовательность, `DEL` игнорируется
 - `CPR` (`CSI 6n`) учитывает `DECOM`: строка возвращается относительно scroll region, когда origin mode включён
 
@@ -155,7 +155,7 @@ ctest --test-dir /tmp/ili9486l_lcd-build-host --output-on-failure
 - Терминал не претендует на полный VT100. Реализован только базовый subset escape-последовательностей, который нужен для позиционирования курсора, очистки и простых цветов.
 - `SGR blink` сейчас принимается и хранится как атрибут, но без таймера анимации мигания.
 - `DEC Special Graphics` сейчас в первую очередь покрывает line-drawing символы для рамок и пересечений.
-- `VT52`-режим реализован без отдельного набора `G2/G3`: `ESC N` / `ESC O` сведены к single-shift через `G1`, этого достаточно для best-effort совместимости.
+- `G2/G3` поддерживаются только как 7-bit single-shift через `ESC N` / `ESC O`; полноценный `GR` path не реализован.
 - В терминальном режиме сейчас нет аппаратного scrollback и нет поддержки UTF-8.
 - Декодер поддерживает только `baseline JPEG`. Если сохранить логотип как `progressive JPEG`, boot logo не покажется.
 - Логотип сейчас ожидается размером ровно `480x320`, иначе код уйдёт в fallback с чёрным экраном перед следующими демо-экранами.

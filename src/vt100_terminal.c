@@ -14,6 +14,8 @@ enum {
   VT100_STATE_CSI,
   VT100_STATE_ESC_G0,
   VT100_STATE_ESC_G1,
+  VT100_STATE_ESC_G2,
+  VT100_STATE_ESC_G3,
   VT100_STATE_ESC_HASH,
   VT100_STATE_OSC,
   VT100_STATE_OSC_ESC,
@@ -1331,12 +1333,16 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->style = 0u;
   terminal->g0_charset = VT100_CHARSET_US;
   terminal->g1_charset = VT100_CHARSET_US;
+  terminal->g2_charset = VT100_CHARSET_US;
+  terminal->g3_charset = VT100_CHARSET_US;
   terminal->gl_set = 0u;
   terminal->saved_fg = terminal->fg;
   terminal->saved_bg = terminal->bg;
   terminal->saved_style = terminal->style;
   terminal->saved_g0_charset = terminal->g0_charset;
   terminal->saved_g1_charset = terminal->g1_charset;
+  terminal->saved_g2_charset = terminal->g2_charset;
+  terminal->saved_g3_charset = terminal->g3_charset;
   terminal->saved_gl_set = terminal->gl_set;
   terminal->scroll_top = 0u;
   terminal->scroll_bottom = (uint8_t)(VT100_TERMINAL_ROWS - 1u);
@@ -1557,6 +1563,10 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->state = VT100_STATE_ESC_G0;
       } else if (ch == ')') {
         terminal->state = VT100_STATE_ESC_G1;
+      } else if (ch == '*') {
+        terminal->state = VT100_STATE_ESC_G2;
+      } else if (ch == '+') {
+        terminal->state = VT100_STATE_ESC_G3;
       } else if (ch == 'P' || ch == 'X' || ch == '^' || ch == '_') {
         terminal->state = VT100_STATE_STR;
       } else if (ch == '7') {
@@ -1567,6 +1577,8 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->saved_style = terminal->style;
         terminal->saved_g0_charset = terminal->g0_charset;
         terminal->saved_g1_charset = terminal->g1_charset;
+        terminal->saved_g2_charset = terminal->g2_charset;
+        terminal->saved_g3_charset = terminal->g3_charset;
         terminal->saved_gl_set = terminal->gl_set;
         terminal->saved_origin_mode = terminal->origin_mode;
         terminal->saved_wrap_pending = terminal->wrap_pending;
@@ -1578,6 +1590,8 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->style = terminal->saved_style;
         terminal->g0_charset = terminal->saved_g0_charset;
         terminal->g1_charset = terminal->saved_g1_charset;
+        terminal->g2_charset = terminal->saved_g2_charset;
+        terminal->g3_charset = terminal->saved_g3_charset;
         terminal->gl_set = terminal->saved_gl_set;
         terminal->origin_mode = terminal->saved_origin_mode;
         terminal->wrap_pending = terminal->saved_wrap_pending;
@@ -1594,8 +1608,11 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->tab_stops[terminal->cursor_col] = true;
       } else if (ch == 'M') {
         vt100_terminal_reverse_index(terminal);
-      } else if (ch == 'N' || ch == 'O') {
-        terminal->single_shift_charset = terminal->g1_charset;
+      } else if (ch == 'N') {
+        terminal->single_shift_charset = terminal->g2_charset;
+        terminal->single_shift_pending = true;
+      } else if (ch == 'O') {
+        terminal->single_shift_charset = terminal->g3_charset;
         terminal->single_shift_pending = true;
       } else if (ch == '=') {
         terminal->keypad_application_mode = true;
@@ -1650,6 +1667,16 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
 
     case VT100_STATE_ESC_G1:
       terminal->g1_charset = vt100_terminal_charset_from_designator(ch);
+      terminal->state = VT100_STATE_GROUND;
+      break;
+
+    case VT100_STATE_ESC_G2:
+      terminal->g2_charset = vt100_terminal_charset_from_designator(ch);
+      terminal->state = VT100_STATE_GROUND;
+      break;
+
+    case VT100_STATE_ESC_G3:
+      terminal->g3_charset = vt100_terminal_charset_from_designator(ch);
       terminal->state = VT100_STATE_GROUND;
       break;
 

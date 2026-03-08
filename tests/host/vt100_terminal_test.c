@@ -122,17 +122,32 @@ static int test_vt52_cursoring_and_exit(void) {
   return 0;
 }
 
-static int test_single_shift_uses_g1_once(void) {
+static int test_single_shift_uses_g2_and_g3_once(void) {
   vt100_terminal_t terminal;
 
   vt100_terminal_init(&terminal, 0u, 0u);
-  feed(&terminal, "\x1b)0\x1bNqx");
+  feed(&terminal, "\x1b*0\x1b+A\x1bNq\x1bO#x");
 
   CHECK(terminal.cells[0][0].ch == 'q');
   CHECK(terminal.cells[0][0].charset == TEST_CHARSET_DEC_SPECIAL);
-  CHECK(terminal.cells[0][1].ch == 'x');
-  CHECK(terminal.cells[0][1].charset == TEST_CHARSET_US);
+  CHECK(terminal.cells[0][1].ch == '#');
+  CHECK(terminal.cells[0][1].charset == TEST_CHARSET_UK);
+  CHECK(terminal.cells[0][2].ch == 'x');
+  CHECK(terminal.cells[0][2].charset == TEST_CHARSET_US);
   CHECK(!terminal.single_shift_pending);
+  return 0;
+}
+
+static int test_decsc_decrc_restore_g2_g3(void) {
+  vt100_terminal_t terminal;
+
+  vt100_terminal_init(&terminal, 0u, 0u);
+  feed(&terminal, "\x1b*0\x1b+A\x1b" "7\x1b*B\x1b+0\x1b" "8\x1bNq\x1bO#");
+
+  CHECK(terminal.cells[0][0].ch == 'q');
+  CHECK(terminal.cells[0][0].charset == TEST_CHARSET_DEC_SPECIAL);
+  CHECK(terminal.cells[0][1].ch == '#');
+  CHECK(terminal.cells[0][1].charset == TEST_CHARSET_UK);
   return 0;
 }
 
@@ -146,7 +161,8 @@ int main(void) {
       {"can_and_sub_cancel_sequences", test_can_and_sub_cancel_sequences},
       {"decom_cpr_is_relative", test_decom_cpr_is_relative},
       {"vt52_cursoring_and_exit", test_vt52_cursoring_and_exit},
-      {"single_shift_uses_g1_once", test_single_shift_uses_g1_once},
+      {"single_shift_uses_g2_and_g3_once", test_single_shift_uses_g2_and_g3_once},
+      {"decsc_decrc_restore_g2_g3", test_decsc_decrc_restore_g2_g3},
   };
 
   for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {

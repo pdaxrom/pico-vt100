@@ -41,9 +41,13 @@ typedef struct {
   uint8_t saved_style;
   uint8_t g0_charset;
   uint8_t g1_charset;
+  uint8_t g2_charset;
+  uint8_t g3_charset;
   uint8_t gl_set;
   uint8_t saved_g0_charset;
   uint8_t saved_g1_charset;
+  uint8_t saved_g2_charset;
+  uint8_t saved_g3_charset;
   uint8_t saved_gl_set;
   uint8_t scroll_top;
   uint8_t scroll_bottom;
