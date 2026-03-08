@@ -55,6 +55,7 @@ typedef struct {
   bool cursor_visible;
   bool autowrap;
   bool wrap_pending;
+  bool saved_wrap_pending;
   bool insert_mode;
   bool newline_mode;
   bool origin_mode;

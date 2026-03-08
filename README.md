@@ -69,7 +69,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `ESC 7`, `ESC 8`, `ESC c`, `ESC D`, `ESC E`, `ESC M`, `ESC Z`
 - `ESC #8` для `DECALN` (`screen alignment display`)
 - `ESC H` для установки tab stop в текущей колонке
-- `ESC ( 0`, `ESC ( B`, `ESC ) 0`, `ESC ) B`, `SO`, `SI` для `DEC Special Graphics`
+- `ESC ( 0`, `ESC ( B`, `ESC ( A`, `ESC ) 0`, `ESC ) B`, `ESC ) A`, `SO`, `SI` для `DEC Special Graphics` и `UK charset`
 - `CSI A`, `B`, `C`, `D`, `E`, `F`, `G`, `H`, `I`, `S`, `T`, `Z`, `` ` ``, `a`, `b`, `d`, `e`, `f`
 - `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`, `h`, `l`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
@@ -82,6 +82,7 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - `DA` / `DSR` ответы отправляются обратно через `stdio`
 - tab stops по умолчанию стоят через каждые `8` колонок
 - `CSI b` повторяет предыдущий печатный символ (`REP`)
+- `CPR` (`CSI 6n`) учитывает `DECOM`: строка возвращается относительно scroll region, когда origin mode включён
 
 Текущие требования:
 

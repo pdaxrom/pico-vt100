@@ -28,6 +28,7 @@ enum {
 
 enum {
   VT100_CHARSET_US = 0,
+  VT100_CHARSET_UK,
   VT100_CHARSET_DEC_SPECIAL,
 };
 
@@ -60,6 +61,7 @@ static void vt100_terminal_scroll_up_region(vt100_terminal_t *terminal, uint8_t 
 static void vt100_terminal_scroll_down_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom);
 static void vt100_terminal_commit_wrap(vt100_terminal_t *terminal);
 static void vt100_terminal_advance(vt100_terminal_t *terminal);
+static uint8_t vt100_terminal_row_base(const vt100_terminal_t *terminal);
 
 static uint8_t vt100_terminal_current_attr(const vt100_terminal_t *terminal) {
   return VT100_ATTR(terminal->fg, terminal->bg);
@@ -75,8 +77,12 @@ static uint8_t vt100_terminal_current_charset(const vt100_terminal_t *terminal) 
 
 static uint8_t vt100_terminal_charset_from_designator(char ch) {
   switch (ch) {
+    case 'A':
+      return VT100_CHARSET_UK;
     case '0':
+    case '2':
       return VT100_CHARSET_DEC_SPECIAL;
+    case '1':
     case 'B':
     default:
       return VT100_CHARSET_US;
@@ -278,12 +284,28 @@ static void vt100_terminal_emit_cursor_position(vt100_terminal_t *terminal) {
       response,
       sizeof(response),
       "\x1b[%u;%uR",
-      (unsigned)(terminal->cursor_row + 1u),
+      (unsigned)(terminal->cursor_row - vt100_terminal_row_base(terminal) + 1u),
       (unsigned)(terminal->cursor_col + 1u));
 
   if (len > 0) {
     vt100_terminal_emit(terminal, response, (size_t)len);
   }
+}
+
+static void vt100_terminal_get_uk_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
+  if (ch == '#') {
+    memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
+    rows[0] = 0x06;
+    rows[1] = 0x09;
+    rows[2] = 0x08;
+    rows[3] = 0x1C;
+    rows[4] = 0x08;
+    rows[5] = 0x1F;
+    rows[6] = 0x08;
+    return;
+  }
+
+  font5x7_get_rows((char)vt100_terminal_sanitize_char(ch), rows);
 }
 
 static void vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
@@ -465,6 +487,11 @@ static void vt100_terminal_get_glyph_rows(const vt100_terminal_cell_t *cell, uin
 
   if (cell->charset == VT100_CHARSET_DEC_SPECIAL) {
     vt100_terminal_get_dec_special_rows(ch, rows);
+    return;
+  }
+
+  if (cell->charset == VT100_CHARSET_UK) {
+    vt100_terminal_get_uk_rows(ch, rows);
     return;
   }
 
@@ -1269,6 +1296,7 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->csi_value = 0;
   terminal->autowrap = true;
   terminal->wrap_pending = false;
+  terminal->saved_wrap_pending = terminal->wrap_pending;
   terminal->insert_mode = false;
   terminal->newline_mode = false;
   terminal->origin_mode = false;
@@ -1395,6 +1423,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->saved_g1_charset = terminal->g1_charset;
         terminal->saved_gl_set = terminal->gl_set;
         terminal->saved_origin_mode = terminal->origin_mode;
+        terminal->saved_wrap_pending = terminal->wrap_pending;
       } else if (ch == '8') {
         terminal->cursor_row = terminal->saved_row;
         terminal->cursor_col = terminal->saved_col;
@@ -1405,6 +1434,7 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         terminal->g1_charset = terminal->saved_g1_charset;
         terminal->gl_set = terminal->saved_gl_set;
         terminal->origin_mode = terminal->saved_origin_mode;
+        terminal->wrap_pending = terminal->saved_wrap_pending;
       } else if (ch == 'c') {
         vt100_terminal_reset(terminal);
         return;
