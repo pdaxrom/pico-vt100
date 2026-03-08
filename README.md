@@ -67,12 +67,14 @@ Boot logo теперь берётся напрямую из [assets/logo.jpg](/U
 - печатные ASCII-символы
 - `CR`, `LF`, `BS`, `TAB`
 - `ESC 7`, `ESC 8`, `ESC c`, `ESC D`, `ESC E`, `ESC M`, `ESC Z`
+- `ESC H` для установки tab stop в текущей колонке
 - `ESC ( 0`, `ESC ( B`, `ESC ) 0`, `ESC ) B`, `SO`, `SI` для `DEC Special Graphics`
 - `CSI A`, `B`, `C`, `D`, `G`, `H`, `f`, `d`
-- `CSI J`, `K`, `r`, `n`, `c`
+- `CSI J`, `K`, `L`, `M`, `@`, `P`, `X`, `r`, `n`, `c`, `g`
 - `CSI m` для расширенного `SGR`: bold, faint, underline, blink flag, reverse, conceal, 16 цветов
 - `CSI ?7h` / `CSI ?7l` для `DECAWM` (`autowrap`)
 - `DA` / `DSR` ответы отправляются обратно через `stdio`
+- tab stops по умолчанию стоят через каждые `8` колонок
 
 Текущие требования:
 

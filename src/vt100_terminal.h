@@ -57,6 +57,7 @@ typedef struct {
   bool wrap_pending;
   vt100_terminal_output_fn output_fn;
   void *output_user_data;
+  bool tab_stops[VT100_TERMINAL_COLS];
   vt100_terminal_cell_t cells[VT100_TERMINAL_ROWS][VT100_TERMINAL_COLS];
   uint16_t csi_params[8];
 } vt100_terminal_t;
