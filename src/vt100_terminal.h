@@ -15,9 +15,12 @@
 #define VT100_TERMINAL_WIDTH_PIXELS (VT100_TERMINAL_COLS * VT100_TERMINAL_CELL_WIDTH)
 #define VT100_TERMINAL_HEIGHT_PIXELS (VT100_TERMINAL_ROWS * VT100_TERMINAL_CELL_HEIGHT)
 
+typedef void (*vt100_terminal_output_fn)(const char *data, size_t len, void *user_data);
+
 typedef struct {
   char ch;
   uint8_t attr;
+  uint8_t style;
 } vt100_terminal_cell_t;
 
 typedef struct {
@@ -31,17 +34,28 @@ typedef struct {
   uint8_t bg;
   uint8_t default_fg;
   uint8_t default_bg;
+  uint8_t style;
+  uint8_t saved_fg;
+  uint8_t saved_bg;
+  uint8_t saved_style;
+  uint8_t scroll_top;
+  uint8_t scroll_bottom;
   uint8_t state;
   uint8_t csi_param_count;
   uint8_t csi_have_value;
   uint8_t csi_private;
   uint16_t csi_value;
   bool cursor_visible;
+  bool autowrap;
+  bool wrap_pending;
+  vt100_terminal_output_fn output_fn;
+  void *output_user_data;
   vt100_terminal_cell_t cells[VT100_TERMINAL_ROWS][VT100_TERMINAL_COLS];
   uint16_t csi_params[8];
 } vt100_terminal_t;
 
 void vt100_terminal_init(vt100_terminal_t *terminal, uint16_t origin_x, uint16_t origin_y);
+void vt100_terminal_set_output(vt100_terminal_t *terminal, vt100_terminal_output_fn output_fn, void *user_data);
 void vt100_terminal_reset(vt100_terminal_t *terminal);
 void vt100_terminal_putc(vt100_terminal_t *terminal, char ch);
 void vt100_terminal_write(vt100_terminal_t *terminal, const char *text);

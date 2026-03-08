@@ -4,6 +4,7 @@
 #include "ili9486l.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -11,6 +12,15 @@ enum {
   VT100_STATE_GROUND = 0,
   VT100_STATE_ESC,
   VT100_STATE_CSI,
+};
+
+enum {
+  VT100_STYLE_BOLD = 1u << 0,
+  VT100_STYLE_FAINT = 1u << 1,
+  VT100_STYLE_UNDERLINE = 1u << 2,
+  VT100_STYLE_BLINK = 1u << 3,
+  VT100_STYLE_REVERSE = 1u << 4,
+  VT100_STYLE_INVISIBLE = 1u << 5,
 };
 
 #define VT100_ATTR(fg, bg) (uint8_t)((((bg) & 0x0Fu) << 4) | ((fg) & 0x0Fu))
@@ -42,6 +52,10 @@ static uint8_t vt100_terminal_current_attr(const vt100_terminal_t *terminal) {
   return VT100_ATTR(terminal->fg, terminal->bg);
 }
 
+static uint8_t vt100_terminal_current_style(const vt100_terminal_t *terminal) {
+  return terminal->style;
+}
+
 static uint8_t vt100_terminal_sanitize_char(char ch) {
   if ((unsigned char)ch < 0x20u || (unsigned char)ch > 0x7Eu) {
     return '?';
@@ -50,14 +64,75 @@ static uint8_t vt100_terminal_sanitize_char(char ch) {
   return (uint8_t)ch;
 }
 
-static void vt100_terminal_set_cell(vt100_terminal_t *terminal, uint8_t row, uint8_t col, char ch, uint8_t attr) {
+static void vt100_terminal_set_cell(vt100_terminal_t *terminal, uint8_t row, uint8_t col, char ch, uint8_t attr, uint8_t style) {
   terminal->cells[row][col].ch = ch;
   terminal->cells[row][col].attr = attr;
+  terminal->cells[row][col].style = style;
 }
 
-static void vt100_terminal_fill_range(vt100_terminal_t *terminal, uint8_t row, uint8_t col_start, uint8_t col_end, uint8_t attr) {
+static void vt100_terminal_fill_range(vt100_terminal_t *terminal, uint8_t row, uint8_t col_start, uint8_t col_end, uint8_t attr, uint8_t style) {
+  if (col_start > col_end) {
+    return;
+  }
+
   for (uint8_t col = col_start; col <= col_end; ++col) {
-    vt100_terminal_set_cell(terminal, row, col, ' ', attr);
+    vt100_terminal_set_cell(terminal, row, col, ' ', attr, style);
+  }
+}
+
+static void vt100_terminal_copy_color(uint8_t dst[3], const uint8_t src[3]) {
+  dst[0] = src[0];
+  dst[1] = src[1];
+  dst[2] = src[2];
+}
+
+static void vt100_terminal_swap_colors(uint8_t first[3], uint8_t second[3]) {
+  for (uint8_t i = 0; i < 3u; ++i) {
+    const uint8_t tmp = first[i];
+    first[i] = second[i];
+    second[i] = tmp;
+  }
+}
+
+static void vt100_terminal_dim_color(uint8_t color[3]) {
+  color[0] >>= 1;
+  color[1] >>= 1;
+  color[2] >>= 1;
+}
+
+static void vt100_terminal_emit(vt100_terminal_t *terminal, const char *data, size_t len) {
+  if (terminal->output_fn == NULL || data == NULL || len == 0u) {
+    return;
+  }
+
+  terminal->output_fn(data, len, terminal->output_user_data);
+}
+
+static void vt100_terminal_emit_device_attributes(vt100_terminal_t *terminal) {
+  static const char response[] = "\x1b[?1;0c";
+  vt100_terminal_emit(terminal, response, sizeof(response) - 1u);
+}
+
+static void vt100_terminal_emit_device_status(vt100_terminal_t *terminal, uint16_t status_code) {
+  char response[16];
+  const int len = snprintf(response, sizeof(response), "\x1b[%un", (unsigned)status_code);
+
+  if (len > 0) {
+    vt100_terminal_emit(terminal, response, (size_t)len);
+  }
+}
+
+static void vt100_terminal_emit_cursor_position(vt100_terminal_t *terminal) {
+  char response[24];
+  const int len = snprintf(
+      response,
+      sizeof(response),
+      "\x1b[%u;%uR",
+      (unsigned)(terminal->cursor_row + 1u),
+      (unsigned)(terminal->cursor_col + 1u));
+
+  if (len > 0) {
+    vt100_terminal_emit(terminal, response, (size_t)len);
   }
 }
 
@@ -78,25 +153,51 @@ static bool vt100_terminal_glyph_pixel_on(const uint8_t glyph_rows[VT100_TERMINA
   return (glyph_rows[py] & (1u << (VT100_TERMINAL_GLYPH_WIDTH - 1u - px))) != 0u;
 }
 
+static void vt100_terminal_resolve_colors(const vt100_terminal_cell_t *cell, bool invert, uint8_t fg[3], uint8_t bg[3]) {
+  uint8_t fg_index = VT100_ATTR_FG(cell->attr);
+  const uint8_t bg_index = VT100_ATTR_BG(cell->attr);
+
+  if ((cell->style & VT100_STYLE_BOLD) != 0u && fg_index < 8u) {
+    fg_index = (uint8_t)(fg_index + 8u);
+  }
+
+  vt100_terminal_copy_color(fg, k_vt100_palette[fg_index]);
+  vt100_terminal_copy_color(bg, k_vt100_palette[bg_index]);
+
+  if ((cell->style & VT100_STYLE_FAINT) != 0u) {
+    vt100_terminal_dim_color(fg);
+  }
+
+  if ((cell->style & VT100_STYLE_REVERSE) != 0u) {
+    vt100_terminal_swap_colors(fg, bg);
+  }
+
+  if (invert) {
+    vt100_terminal_swap_colors(fg, bg);
+  }
+
+  if ((cell->style & VT100_STYLE_INVISIBLE) != 0u) {
+    vt100_terminal_copy_color(fg, bg);
+  }
+}
+
 static void vt100_terminal_render_cell_internal(const vt100_terminal_t *terminal, uint8_t row, uint8_t col, bool invert) {
   uint8_t cell_pixels[VT100_TERMINAL_CELL_WIDTH * VT100_TERMINAL_CELL_HEIGHT * 3u];
   uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
   const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
-  uint8_t fg = VT100_ATTR_FG(cell->attr);
-  uint8_t bg = VT100_ATTR_BG(cell->attr);
-
-  if (invert) {
-    const uint8_t tmp = fg;
-    fg = bg;
-    bg = tmp;
-  }
+  uint8_t fg[3];
+  uint8_t bg[3];
 
   font5x7_get_rows((char)vt100_terminal_sanitize_char(cell->ch), glyph_rows);
+  vt100_terminal_resolve_colors(cell, invert, fg, bg);
 
   for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
     for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
-      const bool pixel_on = vt100_terminal_glyph_pixel_on(glyph_rows, px, py);
-      const uint8_t *color = k_vt100_palette[pixel_on ? fg : bg];
+      const bool pixel_on = vt100_terminal_glyph_pixel_on(glyph_rows, px, py) ||
+                            (((cell->style & VT100_STYLE_UNDERLINE) != 0u) &&
+                             py == (VT100_TERMINAL_CELL_HEIGHT - 1u) &&
+                             px < VT100_TERMINAL_GLYPH_WIDTH);
+      const uint8_t *color = pixel_on ? fg : bg;
       uint8_t *dst = &cell_pixels[(py * VT100_TERMINAL_CELL_WIDTH + px) * 3u];
 
       dst[0] = color[0];
@@ -133,15 +234,19 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
   for (uint8_t col = 0; col < VT100_TERMINAL_COLS; ++col) {
     uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
     const vt100_terminal_cell_t *cell = &terminal->cells[row][col];
-    const uint8_t *fg = k_vt100_palette[VT100_ATTR_FG(cell->attr)];
-    const uint8_t *bg = k_vt100_palette[VT100_ATTR_BG(cell->attr)];
+    uint8_t fg[3];
+    uint8_t bg[3];
     const uint16_t cell_x = (uint16_t)(col * VT100_TERMINAL_CELL_WIDTH);
 
     font5x7_get_rows((char)vt100_terminal_sanitize_char(cell->ch), glyph_rows);
+    vt100_terminal_resolve_colors(cell, false, fg, bg);
 
     for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
       for (uint8_t px = 0; px < VT100_TERMINAL_CELL_WIDTH; ++px) {
-        const bool pixel_on = vt100_terminal_glyph_pixel_on(glyph_rows, px, py);
+        const bool pixel_on = vt100_terminal_glyph_pixel_on(glyph_rows, px, py) ||
+                              (((cell->style & VT100_STYLE_UNDERLINE) != 0u) &&
+                               py == (VT100_TERMINAL_CELL_HEIGHT - 1u) &&
+                               px < VT100_TERMINAL_GLYPH_WIDTH);
         const uint8_t *color = pixel_on ? fg : bg;
         uint8_t *dst = &g_row_buffer[((py * VT100_TERMINAL_WIDTH_PIXELS) + cell_x + px) * 3u];
 
@@ -160,36 +265,103 @@ static void vt100_terminal_render_row(vt100_terminal_t *terminal, uint8_t row) {
       VT100_TERMINAL_CELL_HEIGHT);
 }
 
-static void vt100_terminal_scroll_up(vt100_terminal_t *terminal) {
+static void vt100_terminal_scroll_up_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom) {
+  if (top >= bottom || bottom >= VT100_TERMINAL_ROWS) {
+    return;
+  }
+
   memmove(
-      &terminal->cells[0][0],
-      &terminal->cells[1][0],
-      (VT100_TERMINAL_ROWS - 1u) * VT100_TERMINAL_COLS * sizeof(vt100_terminal_cell_t));
+      &terminal->cells[top][0],
+      &terminal->cells[(uint8_t)(top + 1u)][0],
+      (bottom - top) * VT100_TERMINAL_COLS * sizeof(vt100_terminal_cell_t));
 
   vt100_terminal_fill_range(
       terminal,
-      (uint8_t)(VT100_TERMINAL_ROWS - 1u),
+      bottom,
       0,
       (uint8_t)(VT100_TERMINAL_COLS - 1u),
-      vt100_terminal_current_attr(terminal));
+      vt100_terminal_current_attr(terminal),
+      vt100_terminal_current_style(terminal));
 
-  for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
+  for (uint8_t row = top; row <= bottom; ++row) {
     vt100_terminal_render_row(terminal, row);
   }
 }
 
+static void vt100_terminal_scroll_down_region(vt100_terminal_t *terminal, uint8_t top, uint8_t bottom) {
+  if (top >= bottom || bottom >= VT100_TERMINAL_ROWS) {
+    return;
+  }
+
+  memmove(
+      &terminal->cells[(uint8_t)(top + 1u)][0],
+      &terminal->cells[top][0],
+      (bottom - top) * VT100_TERMINAL_COLS * sizeof(vt100_terminal_cell_t));
+
+  vt100_terminal_fill_range(
+      terminal,
+      top,
+      0,
+      (uint8_t)(VT100_TERMINAL_COLS - 1u),
+      vt100_terminal_current_attr(terminal),
+      vt100_terminal_current_style(terminal));
+
+  for (uint8_t row = top; row <= bottom; ++row) {
+    vt100_terminal_render_row(terminal, row);
+  }
+}
+
+static void vt100_terminal_commit_wrap(vt100_terminal_t *terminal) {
+  if (!terminal->wrap_pending) {
+    return;
+  }
+
+  terminal->wrap_pending = false;
+  terminal->cursor_col = 0;
+  if (terminal->cursor_row == terminal->scroll_bottom) {
+    vt100_terminal_scroll_up_region(terminal, terminal->scroll_top, terminal->scroll_bottom);
+  } else if (terminal->cursor_row < VT100_TERMINAL_ROWS - 1u) {
+    ++terminal->cursor_row;
+  }
+}
+
 static void vt100_terminal_newline(vt100_terminal_t *terminal) {
-  if (terminal->cursor_row == VT100_TERMINAL_ROWS - 1u) {
-    vt100_terminal_scroll_up(terminal);
+  terminal->wrap_pending = false;
+
+  if (terminal->cursor_row >= terminal->scroll_top && terminal->cursor_row <= terminal->scroll_bottom) {
+    if (terminal->cursor_row == terminal->scroll_bottom) {
+      vt100_terminal_scroll_up_region(terminal, terminal->scroll_top, terminal->scroll_bottom);
+    } else {
+      ++terminal->cursor_row;
+    }
+  } else if (terminal->cursor_row == VT100_TERMINAL_ROWS - 1u) {
+    if (terminal->scroll_top == 0u && terminal->scroll_bottom == VT100_TERMINAL_ROWS - 1u) {
+      vt100_terminal_scroll_up_region(terminal, 0u, (uint8_t)(VT100_TERMINAL_ROWS - 1u));
+    }
   } else {
     ++terminal->cursor_row;
   }
 }
 
+static void vt100_terminal_reverse_index(vt100_terminal_t *terminal) {
+  terminal->wrap_pending = false;
+
+  if (terminal->cursor_row >= terminal->scroll_top && terminal->cursor_row <= terminal->scroll_bottom) {
+    if (terminal->cursor_row == terminal->scroll_top) {
+      vt100_terminal_scroll_down_region(terminal, terminal->scroll_top, terminal->scroll_bottom);
+    } else {
+      --terminal->cursor_row;
+    }
+  } else if (terminal->cursor_row > 0u) {
+    --terminal->cursor_row;
+  }
+}
+
 static void vt100_terminal_advance(vt100_terminal_t *terminal) {
   if (terminal->cursor_col == VT100_TERMINAL_COLS - 1u) {
-    terminal->cursor_col = 0;
-    vt100_terminal_newline(terminal);
+    if (terminal->autowrap) {
+      terminal->wrap_pending = true;
+    }
   } else {
     ++terminal->cursor_col;
   }
@@ -218,20 +390,21 @@ static void vt100_terminal_push_csi_value(vt100_terminal_t *terminal) {
 
 static void vt100_terminal_erase_display(vt100_terminal_t *terminal, uint16_t mode) {
   const uint8_t attr = vt100_terminal_current_attr(terminal);
+  const uint8_t style = vt100_terminal_current_style(terminal);
 
   if (mode == 2u) {
     for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
-      vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr);
+      vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
       vt100_terminal_render_row(terminal, row);
     }
     return;
   }
 
   if (mode == 0u) {
-    vt100_terminal_fill_range(terminal, terminal->cursor_row, terminal->cursor_col, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr);
+    vt100_terminal_fill_range(terminal, terminal->cursor_row, terminal->cursor_col, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
     vt100_terminal_render_row(terminal, terminal->cursor_row);
     for (uint8_t row = (uint8_t)(terminal->cursor_row + 1u); row < VT100_TERMINAL_ROWS; ++row) {
-      vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr);
+      vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
       vt100_terminal_render_row(terminal, row);
     }
     return;
@@ -239,23 +412,24 @@ static void vt100_terminal_erase_display(vt100_terminal_t *terminal, uint16_t mo
 
   if (mode == 1u) {
     for (uint8_t row = 0; row < terminal->cursor_row; ++row) {
-      vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr);
+      vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
       vt100_terminal_render_row(terminal, row);
     }
-    vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, terminal->cursor_col, attr);
+    vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, terminal->cursor_col, attr, style);
     vt100_terminal_render_row(terminal, terminal->cursor_row);
   }
 }
 
 static void vt100_terminal_erase_line(vt100_terminal_t *terminal, uint16_t mode) {
   const uint8_t attr = vt100_terminal_current_attr(terminal);
+  const uint8_t style = vt100_terminal_current_style(terminal);
 
   if (mode == 2u) {
-    vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr);
+    vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
   } else if (mode == 1u) {
-    vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, terminal->cursor_col, attr);
+    vt100_terminal_fill_range(terminal, terminal->cursor_row, 0, terminal->cursor_col, attr, style);
   } else {
-    vt100_terminal_fill_range(terminal, terminal->cursor_row, terminal->cursor_col, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr);
+    vt100_terminal_fill_range(terminal, terminal->cursor_row, terminal->cursor_col, (uint8_t)(VT100_TERMINAL_COLS - 1u), attr, style);
   }
 
   vt100_terminal_render_row(terminal, terminal->cursor_row);
@@ -265,6 +439,7 @@ static void vt100_terminal_apply_sgr(vt100_terminal_t *terminal) {
   if (terminal->csi_param_count == 0u) {
     terminal->fg = terminal->default_fg;
     terminal->bg = terminal->default_bg;
+    terminal->style = 0u;
     return;
   }
 
@@ -274,14 +449,31 @@ static void vt100_terminal_apply_sgr(vt100_terminal_t *terminal) {
     if (param == 0u) {
       terminal->fg = terminal->default_fg;
       terminal->bg = terminal->default_bg;
+      terminal->style = 0u;
     } else if (param == 1u) {
-      if (terminal->fg < 8u) {
-        terminal->fg = (uint8_t)(terminal->fg + 8u);
-      }
+      terminal->style = (uint8_t)((terminal->style | VT100_STYLE_BOLD) & (uint8_t)~VT100_STYLE_FAINT);
+    } else if (param == 2u) {
+      terminal->style = (uint8_t)((terminal->style | VT100_STYLE_FAINT) & (uint8_t)~VT100_STYLE_BOLD);
+    } else if (param == 4u) {
+      terminal->style = (uint8_t)(terminal->style | VT100_STYLE_UNDERLINE);
+    } else if (param == 5u) {
+      terminal->style = (uint8_t)(terminal->style | VT100_STYLE_BLINK);
+    } else if (param == 7u) {
+      terminal->style = (uint8_t)(terminal->style | VT100_STYLE_REVERSE);
+    } else if (param == 8u) {
+      terminal->style = (uint8_t)(terminal->style | VT100_STYLE_INVISIBLE);
+    } else if (param == 21u) {
+      terminal->style = (uint8_t)(terminal->style & (uint8_t)~VT100_STYLE_BOLD);
     } else if (param == 22u) {
-      if (terminal->fg >= 8u) {
-        terminal->fg = (uint8_t)(terminal->fg - 8u);
-      }
+      terminal->style = (uint8_t)(terminal->style & (uint8_t)~(VT100_STYLE_BOLD | VT100_STYLE_FAINT));
+    } else if (param == 24u) {
+      terminal->style = (uint8_t)(terminal->style & (uint8_t)~VT100_STYLE_UNDERLINE);
+    } else if (param == 25u) {
+      terminal->style = (uint8_t)(terminal->style & (uint8_t)~VT100_STYLE_BLINK);
+    } else if (param == 27u) {
+      terminal->style = (uint8_t)(terminal->style & (uint8_t)~VT100_STYLE_REVERSE);
+    } else if (param == 28u) {
+      terminal->style = (uint8_t)(terminal->style & (uint8_t)~VT100_STYLE_INVISIBLE);
     } else if (param >= 30u && param <= 37u) {
       terminal->fg = (uint8_t)(param - 30u);
     } else if (param == 39u) {
@@ -298,59 +490,114 @@ static void vt100_terminal_apply_sgr(vt100_terminal_t *terminal) {
   }
 }
 
+static void vt100_terminal_dispatch_private_csi(vt100_terminal_t *terminal, char final_char) {
+  if (final_char != 'h' && final_char != 'l') {
+    return;
+  }
+
+  for (uint8_t i = 0; i < terminal->csi_param_count; ++i) {
+    switch (terminal->csi_params[i]) {
+      case 7u:
+        terminal->autowrap = (final_char == 'h');
+        if (!terminal->autowrap) {
+          terminal->wrap_pending = false;
+        }
+        break;
+    }
+  }
+}
+
 static void vt100_terminal_dispatch_csi(vt100_terminal_t *terminal, char final_char) {
   const uint16_t first = vt100_terminal_param_or(terminal, 0, 1u);
   const uint16_t second = vt100_terminal_param_or(terminal, 1, 1u);
 
   if (terminal->csi_private) {
+    vt100_terminal_dispatch_private_csi(terminal, final_char);
     return;
   }
 
   switch (final_char) {
     case 'A':
-      if (terminal->cursor_row >= vt100_terminal_param_or(terminal, 0, 1u)) {
-        terminal->cursor_row = (uint8_t)(terminal->cursor_row - vt100_terminal_param_or(terminal, 0, 1u));
+      terminal->wrap_pending = false;
+      if (terminal->cursor_row >= terminal->scroll_top && terminal->cursor_row <= terminal->scroll_bottom) {
+        terminal->cursor_row = (uint8_t)((terminal->cursor_row > (uint8_t)(terminal->scroll_top + first - 1u)) ? (terminal->cursor_row - first) : terminal->scroll_top);
+      } else if (terminal->cursor_row >= first) {
+        terminal->cursor_row = (uint8_t)(terminal->cursor_row - first);
       } else {
         terminal->cursor_row = 0;
       }
       break;
     case 'B': {
-      const uint16_t next = (uint16_t)(terminal->cursor_row + vt100_terminal_param_or(terminal, 0, 1u));
-      terminal->cursor_row = (uint8_t)(next >= VT100_TERMINAL_ROWS ? (VT100_TERMINAL_ROWS - 1u) : next);
+      const uint8_t bottom = (terminal->cursor_row >= terminal->scroll_top && terminal->cursor_row <= terminal->scroll_bottom)
+                                 ? terminal->scroll_bottom
+                                 : (uint8_t)(VT100_TERMINAL_ROWS - 1u);
+      const uint16_t next = (uint16_t)(terminal->cursor_row + first);
+      terminal->wrap_pending = false;
+      terminal->cursor_row = (uint8_t)(next > bottom ? bottom : next);
       break;
     }
     case 'C': {
-      const uint16_t next = (uint16_t)(terminal->cursor_col + vt100_terminal_param_or(terminal, 0, 1u));
+      const uint16_t next = (uint16_t)(terminal->cursor_col + first);
+      terminal->wrap_pending = false;
       terminal->cursor_col = (uint8_t)(next >= VT100_TERMINAL_COLS ? (VT100_TERMINAL_COLS - 1u) : next);
       break;
     }
     case 'D':
-      if (terminal->cursor_col >= vt100_terminal_param_or(terminal, 0, 1u)) {
-        terminal->cursor_col = (uint8_t)(terminal->cursor_col - vt100_terminal_param_or(terminal, 0, 1u));
+      terminal->wrap_pending = false;
+      if (terminal->cursor_col >= first) {
+        terminal->cursor_col = (uint8_t)(terminal->cursor_col - first);
       } else {
         terminal->cursor_col = 0;
       }
       break;
     case 'G':
+      terminal->wrap_pending = false;
       terminal->cursor_col = (uint8_t)((first == 0u || first > VT100_TERMINAL_COLS) ? (VT100_TERMINAL_COLS - 1u) : (first - 1u));
       break;
     case 'H':
     case 'f':
+      terminal->wrap_pending = false;
       terminal->cursor_row = (uint8_t)((first == 0u || first > VT100_TERMINAL_ROWS) ? (VT100_TERMINAL_ROWS - 1u) : (first - 1u));
       terminal->cursor_col = (uint8_t)((second == 0u || second > VT100_TERMINAL_COLS) ? (VT100_TERMINAL_COLS - 1u) : (second - 1u));
       break;
     case 'J':
+      terminal->wrap_pending = false;
       vt100_terminal_erase_display(terminal, vt100_terminal_param_or(terminal, 0, 0u));
       break;
     case 'K':
+      terminal->wrap_pending = false;
       vt100_terminal_erase_line(terminal, vt100_terminal_param_or(terminal, 0, 0u));
       break;
+    case 'c':
+      vt100_terminal_emit_device_attributes(terminal);
+      break;
     case 'd':
+      terminal->wrap_pending = false;
       terminal->cursor_row = (uint8_t)((first == 0u || first > VT100_TERMINAL_ROWS) ? (VT100_TERMINAL_ROWS - 1u) : (first - 1u));
+      break;
+    case 'n':
+      if (vt100_terminal_param_or(terminal, 0, 0u) == 5u) {
+        vt100_terminal_emit_device_status(terminal, 0u);
+      } else if (vt100_terminal_param_or(terminal, 0, 0u) == 6u) {
+        vt100_terminal_emit_cursor_position(terminal);
+      }
       break;
     case 'm':
       vt100_terminal_apply_sgr(terminal);
       break;
+    case 'r': {
+      const uint16_t top = vt100_terminal_param_or(terminal, 0, 1u);
+      const uint16_t bottom = vt100_terminal_param_or(terminal, 1, VT100_TERMINAL_ROWS);
+
+      if (top >= 1u && top < bottom && bottom <= VT100_TERMINAL_ROWS) {
+        terminal->scroll_top = (uint8_t)(top - 1u);
+        terminal->scroll_bottom = (uint8_t)(bottom - 1u);
+        terminal->cursor_row = 0u;
+        terminal->cursor_col = 0u;
+        terminal->wrap_pending = false;
+      }
+      break;
+    }
     case 's':
       terminal->saved_row = terminal->cursor_row;
       terminal->saved_col = terminal->cursor_col;
@@ -383,14 +630,28 @@ void vt100_terminal_reset(vt100_terminal_t *terminal) {
   terminal->default_bg = 0u;
   terminal->fg = terminal->default_fg;
   terminal->bg = terminal->default_bg;
+  terminal->style = 0u;
+  terminal->saved_fg = terminal->fg;
+  terminal->saved_bg = terminal->bg;
+  terminal->saved_style = terminal->style;
+  terminal->scroll_top = 0u;
+  terminal->scroll_bottom = (uint8_t)(VT100_TERMINAL_ROWS - 1u);
   terminal->state = VT100_STATE_GROUND;
   terminal->csi_param_count = 0;
   terminal->csi_have_value = 0;
   terminal->csi_private = 0;
   terminal->csi_value = 0;
+  terminal->autowrap = true;
+  terminal->wrap_pending = false;
 
   for (uint8_t row = 0; row < VT100_TERMINAL_ROWS; ++row) {
-    vt100_terminal_fill_range(terminal, row, 0, (uint8_t)(VT100_TERMINAL_COLS - 1u), vt100_terminal_current_attr(terminal));
+    vt100_terminal_fill_range(
+        terminal,
+        row,
+        0,
+        (uint8_t)(VT100_TERMINAL_COLS - 1u),
+        vt100_terminal_current_attr(terminal),
+        vt100_terminal_current_style(terminal));
   }
 
   ili9486l_fill_rect(
@@ -411,6 +672,15 @@ void vt100_terminal_init(vt100_terminal_t *terminal, uint16_t origin_x, uint16_t
   vt100_terminal_reset(terminal);
 }
 
+void vt100_terminal_set_output(vt100_terminal_t *terminal, vt100_terminal_output_fn output_fn, void *user_data) {
+  if (terminal == NULL) {
+    return;
+  }
+
+  terminal->output_fn = output_fn;
+  terminal->output_user_data = user_data;
+}
+
 void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
   vt100_terminal_hide_cursor(terminal);
 
@@ -425,11 +695,13 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
         case '\a':
           break;
         case '\b':
+          terminal->wrap_pending = false;
           if (terminal->cursor_col > 0u) {
             --terminal->cursor_col;
           }
           break;
         case '\t': {
+          vt100_terminal_commit_wrap(terminal);
           const uint8_t next_tab = (uint8_t)(((terminal->cursor_col / 8u) + 1u) * 8u);
           terminal->cursor_col = next_tab >= VT100_TERMINAL_COLS ? (VT100_TERMINAL_COLS - 1u) : next_tab;
           break;
@@ -440,11 +712,19 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
           vt100_terminal_newline(terminal);
           break;
         case '\r':
+          terminal->wrap_pending = false;
           terminal->cursor_col = 0;
           break;
         default:
           if ((unsigned char)ch >= 0x20u) {
-            vt100_terminal_set_cell(terminal, terminal->cursor_row, terminal->cursor_col, ch, vt100_terminal_current_attr(terminal));
+            vt100_terminal_commit_wrap(terminal);
+            vt100_terminal_set_cell(
+                terminal,
+                terminal->cursor_row,
+                terminal->cursor_col,
+                ch,
+                vt100_terminal_current_attr(terminal),
+                vt100_terminal_current_style(terminal));
             vt100_terminal_render_cell_internal(terminal, terminal->cursor_row, terminal->cursor_col, false);
             vt100_terminal_advance(terminal);
           }
@@ -463,17 +743,28 @@ void vt100_terminal_putc(vt100_terminal_t *terminal, char ch) {
       } else if (ch == '7') {
         terminal->saved_row = terminal->cursor_row;
         terminal->saved_col = terminal->cursor_col;
+        terminal->saved_fg = terminal->fg;
+        terminal->saved_bg = terminal->bg;
+        terminal->saved_style = terminal->style;
       } else if (ch == '8') {
         terminal->cursor_row = terminal->saved_row;
         terminal->cursor_col = terminal->saved_col;
+        terminal->fg = terminal->saved_fg;
+        terminal->bg = terminal->saved_bg;
+        terminal->style = terminal->saved_style;
       } else if (ch == 'c') {
         vt100_terminal_reset(terminal);
         return;
       } else if (ch == 'D') {
         vt100_terminal_newline(terminal);
       } else if (ch == 'E') {
+        terminal->wrap_pending = false;
         terminal->cursor_col = 0;
         vt100_terminal_newline(terminal);
+      } else if (ch == 'M') {
+        vt100_terminal_reverse_index(terminal);
+      } else if (ch == 'Z') {
+        vt100_terminal_emit_device_attributes(terminal);
       }
       break;
 

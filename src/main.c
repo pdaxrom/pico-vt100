@@ -6,6 +6,14 @@
 
 #include <stdio.h>
 
+static void terminal_stdio_output(const char *data, size_t len, void *user_data) {
+  (void)user_data;
+
+  for (size_t i = 0; i < len; ++i) {
+    putchar_raw((uint8_t)data[i]);
+  }
+}
+
 static void show_boot_logo(void) {
   if (!jpeg_logo_show()) {
     ili9486l_fill_screen(LCD_COLOR_BLACK);
@@ -243,10 +251,12 @@ int main(void) {
   terminal_origin_y = (uint16_t)((ili9486l_height() - VT100_TERMINAL_HEIGHT_PIXELS) / 2u);
   ili9486l_fill_screen(LCD_COLOR_BLACK);
   vt100_terminal_init(&terminal, 0, terminal_origin_y);
+  vt100_terminal_set_output(&terminal, terminal_stdio_output, NULL);
   vt100_terminal_write(&terminal, "\x1b[2J\x1b[H");
   vt100_terminal_write(&terminal, "ILI9486L VT100 TERMINAL 80X35\r\n");
   vt100_terminal_write(&terminal, "UART/STDIO input is rendered directly to LCD.\r\n");
-  vt100_terminal_write(&terminal, "Supported: CR LF BS TAB, CSI A/B/C/D/H/f/J/K/G/d/m, ESC 7/8/c.\r\n");
+  vt100_terminal_write(&terminal, "Supported: CSI A/B/C/D/G/H/f/d/J/K/m/r/n/c, ESC 7/8/c/D/E/M/Z.\r\n");
+  vt100_terminal_write(&terminal, "Modes: DECAWM ?7h/?7l, DECSTBM, RI, save/restore attrs.\r\n");
   vt100_terminal_write(&terminal, "\r\n");
   vt100_terminal_write(&terminal, "\x1b[32mREADY\x1b[0m> ");
 
