@@ -35,6 +35,7 @@ add_executable(ili9486l_lcd
   src/logo_jpg.S
   src/main.c
   src/tjpgd/tjpgd.c
+  src/vt100_terminal.c
 )
 
 target_include_directories(ili9486l_lcd PRIVATE
@@ -50,7 +51,7 @@ target_link_libraries(ili9486l_lcd PRIVATE
   hardware_spi
 )
 
-pico_enable_stdio_usb(ili9486l_lcd 0)
+pico_enable_stdio_usb(ili9486l_lcd 1)
 pico_enable_stdio_uart(ili9486l_lcd 1)
 
 pico_set_program_name(ili9486l_lcd "ili9486l_lcd")

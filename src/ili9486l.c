@@ -37,6 +37,10 @@
 
 static uint16_t g_width = LCD_NATIVE_WIDTH;
 static uint16_t g_height = LCD_NATIVE_HEIGHT;
+static uint16_t g_scroll_top_fixed = 0;
+static uint16_t g_scroll_area = LCD_NATIVE_HEIGHT;
+static uint16_t g_scroll_bottom_fixed = 0;
+static uint16_t g_scroll_start = 0;
 
 static inline void ili9486l_set_dc(uint8_t data_mode) {
   gpio_put(LCD_PIN_DC, data_mode);
@@ -60,6 +64,15 @@ static void ili9486l_write_data(const uint8_t *data, size_t len) {
 static void ili9486l_write_command_data(uint8_t command, const uint8_t *data, size_t len) {
   ili9486l_write_command(command);
   ili9486l_write_data(data, len);
+}
+
+static void ili9486l_write_u16_command(uint8_t command, uint16_t value) {
+  const uint8_t data[] = {
+    (uint8_t)(value >> 8),
+    (uint8_t)(value & 0xFFu),
+  };
+
+  ili9486l_write_command_data(command, data, sizeof(data));
 }
 
 static void ili9486l_init_panel_registers(void) {
@@ -165,6 +178,63 @@ bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 
   ili9486l_set_address_window(x, y, (uint16_t)(x + w - 1u), (uint16_t)(y + h - 1u));
   return true;
+}
+
+bool ili9486l_configure_vertical_scroll(uint16_t top_fixed, uint16_t scroll_area, uint16_t bottom_fixed) {
+  const uint32_t total = (uint32_t)top_fixed + scroll_area + bottom_fixed;
+  const uint8_t data[] = {
+    (uint8_t)(top_fixed >> 8), (uint8_t)(top_fixed & 0xFFu),
+    (uint8_t)(scroll_area >> 8), (uint8_t)(scroll_area & 0xFFu),
+    (uint8_t)(bottom_fixed >> 8), (uint8_t)(bottom_fixed & 0xFFu),
+  };
+
+  if (scroll_area == 0 || total != g_height) {
+    return false;
+  }
+
+  g_scroll_top_fixed = top_fixed;
+  g_scroll_area = scroll_area;
+  g_scroll_bottom_fixed = bottom_fixed;
+  g_scroll_start = 0;
+
+  ili9486l_write_command_data(0x33, data, sizeof(data));
+  ili9486l_write_u16_command(0x37, g_scroll_top_fixed);
+  return true;
+}
+
+bool ili9486l_set_vertical_scroll_start(uint16_t start) {
+  uint16_t vsp = 0;
+
+  if (g_scroll_area == 0) {
+    return false;
+  }
+
+  start %= g_scroll_area;
+  g_scroll_start = start;
+  vsp = (uint16_t)(g_scroll_top_fixed + start);
+  ili9486l_write_u16_command(0x37, vsp);
+  return true;
+}
+
+bool ili9486l_scroll_vertical_by(int16_t delta) {
+  int32_t next = 0;
+
+  if (g_scroll_area == 0) {
+    return false;
+  }
+
+  next = (int32_t)g_scroll_start + delta;
+  next %= (int32_t)g_scroll_area;
+  if (next < 0) {
+    next += g_scroll_area;
+  }
+
+  return ili9486l_set_vertical_scroll_start((uint16_t)next);
+}
+
+void ili9486l_reset_vertical_scroll(void) {
+  (void)ili9486l_configure_vertical_scroll(0, g_height, 0);
+  (void)ili9486l_set_vertical_scroll_start(0);
 }
 
 void ili9486l_write_rgb666_pixels(const uint8_t *pixels, size_t pixel_count) {
@@ -276,6 +346,7 @@ void ili9486l_set_rotation(uint8_t rotation) {
   }
 
   ili9486l_write_command_data(0x36, &madctl, 1);
+  ili9486l_reset_vertical_scroll();
 }
 
 void ili9486l_init(void) {

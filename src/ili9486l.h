@@ -26,6 +26,10 @@ void ili9486l_init(void);
 void ili9486l_set_rotation(uint8_t rotation);
 uint16_t ili9486l_width(void);
 uint16_t ili9486l_height(void);
+bool ili9486l_configure_vertical_scroll(uint16_t top_fixed, uint16_t scroll_area, uint16_t bottom_fixed);
+bool ili9486l_set_vertical_scroll_start(uint16_t start);
+bool ili9486l_scroll_vertical_by(int16_t delta);
+void ili9486l_reset_vertical_scroll(void);
 
 void ili9486l_draw_pixel(uint16_t x, uint16_t y, lcd_color_t color);
 void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, lcd_color_t color);

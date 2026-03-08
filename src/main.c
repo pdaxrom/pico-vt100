@@ -1,7 +1,10 @@
 #include "ili9486l.h"
 #include "jpeg_logo.h"
+#include "vt100_terminal.h"
 
 #include "pico/stdlib.h"
+
+#include <stdio.h>
 
 static void show_boot_logo(void) {
   if (!jpeg_logo_show()) {
@@ -10,6 +13,77 @@ static void show_boot_logo(void) {
   }
 
   sleep_ms(3000);
+}
+
+static void draw_native_scroll_demo_screen(uint16_t top_fixed, uint16_t bottom_fixed) {
+  static const uint8_t band_colors[][3] = {
+    {63u, 10u, 10u},
+    {63u, 24u, 8u},
+    {63u, 40u, 8u},
+    {48u, 56u, 8u},
+    {20u, 63u, 16u},
+    {8u, 63u, 40u},
+    {8u, 52u, 63u},
+    {20u, 28u, 63u},
+    {40u, 12u, 63u},
+    {56u, 8u, 44u},
+    {63u, 8u, 24u},
+    {36u, 36u, 36u},
+  };
+  const uint16_t scroll_area = (uint16_t)(ili9486l_height() - top_fixed - bottom_fixed);
+  const uint16_t band_height = 24u;
+  const lcd_color_t header_bg = LCD_RGB666(0x03, 0x05, 0x0B);
+  const lcd_color_t footer_bg = LCD_RGB666(0x08, 0x03, 0x03);
+  char label[24];
+
+  ili9486l_fill_screen(LCD_COLOR_BLACK);
+
+  ili9486l_fill_rect(0, 0, ili9486l_width(), top_fixed, header_bg);
+  ili9486l_draw_string(16, 6, "NATIVE SCROLL AXIS", LCD_COLOR_WHITE, header_bg, 2);
+
+  for (uint16_t y = 0, band = 0; y < scroll_area; y = (uint16_t)(y + band_height), ++band) {
+    const uint16_t actual_y = (uint16_t)(top_fixed + y);
+    const uint16_t height = (uint16_t)((y + band_height <= scroll_area) ? band_height : (scroll_area - y));
+    const uint8_t *color = band_colors[band % (sizeof(band_colors) / sizeof(band_colors[0]))];
+    const lcd_color_t bg = LCD_RGB666(color[0], color[1], color[2]);
+
+    ili9486l_fill_rect(0, actual_y, ili9486l_width(), height, bg);
+    snprintf(label, sizeof(label), "ROW %03u", (unsigned)band);
+    ili9486l_draw_string(16, (uint16_t)(actual_y + 6), label, LCD_COLOR_BLACK, bg, 2);
+  }
+
+  ili9486l_fill_rect(0, (uint16_t)(ili9486l_height() - bottom_fixed), ili9486l_width(), bottom_fixed, footer_bg);
+  ili9486l_draw_string(16, (uint16_t)(ili9486l_height() - bottom_fixed + 6), "LANDSCAPE => HORIZONTAL", LCD_COLOR_WHITE, footer_bg, 2);
+}
+
+static void show_native_scroll_demo(void) {
+  const uint16_t top_fixed = 28u;
+  const uint16_t bottom_fixed = 28u;
+  const uint16_t scroll_area = (uint16_t)(ili9486l_height() - top_fixed - bottom_fixed);
+
+  draw_native_scroll_demo_screen(top_fixed, bottom_fixed);
+
+  if (!ili9486l_configure_vertical_scroll(top_fixed, scroll_area, bottom_fixed)) {
+    return;
+  }
+
+  sleep_ms(500);
+  (void)ili9486l_set_vertical_scroll_start((uint16_t)(scroll_area / 4u));
+  sleep_ms(500);
+  (void)ili9486l_set_vertical_scroll_start((uint16_t)(scroll_area / 2u));
+  sleep_ms(500);
+  (void)ili9486l_set_vertical_scroll_start((uint16_t)((scroll_area * 3u) / 4u));
+  sleep_ms(500);
+
+  for (uint16_t offset = 0; offset < scroll_area; ++offset) {
+    (void)ili9486l_set_vertical_scroll_start(offset);
+    sleep_ms(6);
+  }
+
+  sleep_ms(200);
+  (void)ili9486l_set_vertical_scroll_start(0);
+  sleep_ms(500);
+  ili9486l_reset_vertical_scroll();
 }
 
 static void draw_rgb_gradient_strip(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
@@ -158,15 +232,31 @@ static void draw_demo_screen(void) {
 }
 
 int main(void) {
+  static vt100_terminal_t terminal;
+  uint16_t terminal_origin_y = 0;
+
   stdio_init_all();
   sleep_ms(1000);
 
   ili9486l_init();
   show_boot_logo();
-  show_color_test_screen();
-  draw_demo_screen();
+  terminal_origin_y = (uint16_t)((ili9486l_height() - VT100_TERMINAL_HEIGHT_PIXELS) / 2u);
+  ili9486l_fill_screen(LCD_COLOR_BLACK);
+  vt100_terminal_init(&terminal, 0, terminal_origin_y);
+  vt100_terminal_write(&terminal, "\x1b[2J\x1b[H");
+  vt100_terminal_write(&terminal, "ILI9486L VT100 TERMINAL 80X35\r\n");
+  vt100_terminal_write(&terminal, "UART/STDIO input is rendered directly to LCD.\r\n");
+  vt100_terminal_write(&terminal, "Supported: CR LF BS TAB, CSI A/B/C/D/H/f/J/K/G/d/m, ESC 7/8/c.\r\n");
+  vt100_terminal_write(&terminal, "\r\n");
+  vt100_terminal_write(&terminal, "\x1b[32mREADY\x1b[0m> ");
 
   while (true) {
+    const int ch = getchar_timeout_us(0);
+
+    if (ch != PICO_ERROR_TIMEOUT) {
+      vt100_terminal_putc(&terminal, (char)ch);
+    }
+
     tight_loop_contents();
   }
 }
