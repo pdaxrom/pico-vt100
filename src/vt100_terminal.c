@@ -349,263 +349,96 @@ static void vt100_terminal_emit_cursor_position(vt100_terminal_t *terminal) {
   }
 }
 
-static void vt100_terminal_get_uk_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
-  if (ch == '#') {
-    memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
-    rows[0] = 0x06;
-    rows[1] = 0x09;
-    rows[2] = 0x08;
-    rows[3] = 0x1C;
-    rows[4] = 0x08;
-    rows[5] = 0x1F;
-    rows[6] = 0x08;
-    return;
-  }
+static const uint8_t *vt100_terminal_get_uk_row_masks(char ch) {
+  static const uint8_t k_uk_hash_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x0C, 0x12, 0x02, 0x07, 0x02, 0x1F, 0x02, 0x00};
 
-  memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
+  return ch == '#' ? k_uk_hash_row_masks : NULL;
 }
 
-static bool vt100_terminal_get_dec_special_rows(char ch, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT]) {
-  memset(rows, 0, VT100_TERMINAL_GLYPH_HEIGHT);
+static const uint8_t *vt100_terminal_get_dec_special_row_masks(char ch) {
+  static const uint8_t k_dec_diamond_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x04, 0x0E, 0x1F, 0x0E, 0x04, 0x00, 0x00};
+  static const uint8_t k_dec_checkerboard_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x15, 0x0A, 0x15, 0x0A, 0x15, 0x0A, 0x15, 0x00};
+  static const uint8_t k_dec_degree_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x0C, 0x12, 0x12, 0x0C, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_plus_minus_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x04, 0x1F, 0x04, 0x00, 0x1F, 0x00, 0x00};
+  static const uint8_t k_dec_lower_right_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x07, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_upper_right_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x07, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_upper_left_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x1C, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_lower_left_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x1C, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_cross_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_scan1_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_scan3_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_scan5_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_scan7_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_scan9_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00};
+  static const uint8_t k_dec_left_tee_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x1C, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_right_tee_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x07, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_bottom_tee_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x1F, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t k_dec_top_tee_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x1F, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_vertical_bar_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x00};
+  static const uint8_t k_dec_less_equal_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x1F, 0x00};
+  static const uint8_t k_dec_greater_equal_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x1F, 0x00};
+  static const uint8_t k_dec_pi_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x1F, 0x04, 0x04, 0x04, 0x04, 0x05, 0x02, 0x00};
+  static const uint8_t k_dec_not_equal_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x10, 0x1F, 0x08, 0x1F, 0x01, 0x00, 0x00};
+  static const uint8_t k_dec_sterling_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x0E, 0x11, 0x01, 0x0F, 0x01, 0x01, 0x1F, 0x00};
+  static const uint8_t k_dec_bullet_row_masks[VT100_TERMINAL_CELL_HEIGHT] = {0x00, 0x00, 0x00, 0x04, 0x0E, 0x0E, 0x04, 0x00, 0x00};
 
   switch (ch) {
-    case '`':
-      rows[1] = 0x04;
-      rows[2] = 0x0E;
-      rows[3] = 0x1F;
-      rows[4] = 0x0E;
-      rows[5] = 0x04;
-      return true;
-    case 'a':
-      rows[0] = 0x15;
-      rows[1] = 0x0A;
-      rows[2] = 0x15;
-      rows[3] = 0x0A;
-      rows[4] = 0x15;
-      rows[5] = 0x0A;
-      rows[6] = 0x15;
-      return true;
-    case 'f':
-      rows[0] = 0x06;
-      rows[1] = 0x09;
-      rows[2] = 0x09;
-      rows[3] = 0x06;
-      return true;
-    case 'g':
-      rows[1] = 0x04;
-      rows[2] = 0x1F;
-      rows[3] = 0x04;
-      rows[5] = 0x1F;
-      return true;
-    case 'j':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x1C;
-      return true;
-    case 'k':
-      rows[3] = 0x1C;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'l':
-      rows[3] = 0x07;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'm':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x07;
-      return true;
-    case 'n':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x1F;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'o':
-      rows[0] = 0x1F;
-      return true;
-    case 'p':
-      rows[1] = 0x1F;
-      return true;
-    case 'q':
-      rows[3] = 0x1F;
-      return true;
-    case 'r':
-      rows[4] = 0x1F;
-      return true;
-    case 's':
-      rows[6] = 0x1F;
-      return true;
-    case 't':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x07;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'u':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x1C;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'v':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x1F;
-      return true;
-    case 'w':
-      rows[3] = 0x1F;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'x':
-      rows[0] = 0x04;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x04;
-      rows[4] = 0x04;
-      rows[5] = 0x04;
-      rows[6] = 0x04;
-      return true;
-    case 'y':
-      rows[0] = 0x02;
-      rows[1] = 0x04;
-      rows[2] = 0x08;
-      rows[3] = 0x10;
-      rows[4] = 0x08;
-      rows[5] = 0x04;
-      rows[6] = 0x1F;
-      return true;
-    case 'z':
-      rows[0] = 0x08;
-      rows[1] = 0x04;
-      rows[2] = 0x02;
-      rows[3] = 0x01;
-      rows[4] = 0x02;
-      rows[5] = 0x04;
-      rows[6] = 0x1F;
-      return true;
-    case '{':
-      rows[0] = 0x1F;
-      rows[1] = 0x04;
-      rows[2] = 0x04;
-      rows[3] = 0x04;
-      rows[4] = 0x04;
-      rows[5] = 0x14;
-      rows[6] = 0x08;
-      return true;
-    case '|':
-      rows[1] = 0x01;
-      rows[2] = 0x1F;
-      rows[3] = 0x02;
-      rows[4] = 0x1F;
-      rows[5] = 0x10;
-      return true;
-    case '}':
-      rows[0] = 0x0E;
-      rows[1] = 0x11;
-      rows[2] = 0x10;
-      rows[3] = 0x1E;
-      rows[4] = 0x10;
-      rows[5] = 0x10;
-      rows[6] = 0x1F;
-      return true;
-    case '~':
-      rows[2] = 0x04;
-      rows[3] = 0x0E;
-      rows[4] = 0x0E;
-      rows[5] = 0x04;
-      return true;
+    case '`': return k_dec_diamond_row_masks;
+    case 'a': return k_dec_checkerboard_row_masks;
+    case 'f': return k_dec_degree_row_masks;
+    case 'g': return k_dec_plus_minus_row_masks;
+    case 'j': return k_dec_lower_right_row_masks;
+    case 'k': return k_dec_upper_right_row_masks;
+    case 'l': return k_dec_upper_left_row_masks;
+    case 'm': return k_dec_lower_left_row_masks;
+    case 'n': return k_dec_cross_row_masks;
+    case 'o': return k_dec_scan1_row_masks;
+    case 'p': return k_dec_scan3_row_masks;
+    case 'q': return k_dec_scan5_row_masks;
+    case 'r': return k_dec_scan7_row_masks;
+    case 's': return k_dec_scan9_row_masks;
+    case 't': return k_dec_left_tee_row_masks;
+    case 'u': return k_dec_right_tee_row_masks;
+    case 'v': return k_dec_bottom_tee_row_masks;
+    case 'w': return k_dec_top_tee_row_masks;
+    case 'x': return k_dec_vertical_bar_row_masks;
+    case 'y': return k_dec_less_equal_row_masks;
+    case 'z': return k_dec_greater_equal_row_masks;
+    case '{': return k_dec_pi_row_masks;
+    case '|': return k_dec_not_equal_row_masks;
+    case '}': return k_dec_sterling_row_masks;
+    case '~': return k_dec_bullet_row_masks;
     default:
-      return false;
-  }
-}
-
-static const uint8_t *vt100_terminal_get_glyph_columns(const vt100_terminal_cell_t *cell, uint8_t rows[VT100_TERMINAL_GLYPH_HEIGHT], bool *use_rows) {
-  const char ch = (char)vt100_terminal_sanitize_char(cell->ch);
-
-  *use_rows = false;
-  if (cell->charset == VT100_CHARSET_DEC_SPECIAL) {
-    if (vt100_terminal_get_dec_special_rows(ch, rows)) {
-      *use_rows = true;
       return NULL;
-    }
-    return font5x7_get_glyph(ch);
   }
-
-  if (cell->charset == VT100_CHARSET_UK) {
-    if (ch == '#') {
-      vt100_terminal_get_uk_rows(ch, rows);
-      *use_rows = true;
-      return NULL;
-    }
-  }
-
-  return font5x7_get_glyph(ch);
-}
-
-static uint8_t vt100_terminal_pack_row_bits(uint8_t row_bits) {
-  uint8_t mask = 0u;
-
-  for (uint8_t px = 0; px < VT100_TERMINAL_GLYPH_WIDTH; ++px) {
-    if ((row_bits & (1u << (VT100_TERMINAL_GLYPH_WIDTH - 1u - px))) != 0u) {
-      mask |= (uint8_t)(1u << px);
-    }
-  }
-
-  return mask;
 }
 
 static void vt100_terminal_build_cell_row_masks(const vt100_terminal_cell_t *cell, uint8_t row_masks[VT100_TERMINAL_CELL_HEIGHT]) {
-  uint8_t glyph_rows[VT100_TERMINAL_GLYPH_HEIGHT];
-  const uint8_t *glyph_columns;
-  bool use_rows;
-  const uint8_t *builtin_rows = NULL;
   const char ch = (char)vt100_terminal_sanitize_char(cell->ch);
+  const uint8_t *builtin_rows = NULL;
 
-  if (cell->charset == VT100_CHARSET_US || (cell->charset == VT100_CHARSET_UK && ch != '#')) {
-    builtin_rows = font5x7_get_cell6x9_row_masks(ch);
-  }
-
-  if (builtin_rows != NULL) {
-    memcpy(row_masks, builtin_rows, VT100_TERMINAL_CELL_HEIGHT);
-  } else {
-    memset(row_masks, 0, VT100_TERMINAL_CELL_HEIGHT);
-    glyph_columns = vt100_terminal_get_glyph_columns(cell, glyph_rows, &use_rows);
-
-    for (uint8_t glyph_row = 0; glyph_row < VT100_TERMINAL_GLYPH_HEIGHT; ++glyph_row) {
-      uint8_t mask = 0u;
-
-      if (use_rows) {
-        mask = vt100_terminal_pack_row_bits(glyph_rows[glyph_row]);
-      } else {
-        for (uint8_t px = 0; px < VT100_TERMINAL_GLYPH_WIDTH; ++px) {
-          if ((glyph_columns[px] & (1u << glyph_row)) != 0u) {
-            mask |= (uint8_t)(1u << px);
-          }
-        }
+  switch (cell->charset) {
+    case VT100_CHARSET_US:
+      builtin_rows = font5x7_get_cell6x9_row_masks(ch);
+      break;
+    case VT100_CHARSET_UK:
+      builtin_rows = vt100_terminal_get_uk_row_masks(ch);
+      if (builtin_rows == NULL) {
+        builtin_rows = font5x7_get_cell6x9_row_masks(ch);
       }
-
-      row_masks[VT100_TERMINAL_GLYPH_Y_OFFSET + glyph_row] = mask;
-    }
+      break;
+    case VT100_CHARSET_DEC_SPECIAL:
+      builtin_rows = vt100_terminal_get_dec_special_row_masks(ch);
+      if (builtin_rows == NULL) {
+        builtin_rows = font5x7_get_cell6x9_row_masks(ch);
+      }
+      break;
+    default:
+      builtin_rows = font5x7_get_cell6x9_row_masks(ch);
+      break;
   }
+
+  memcpy(row_masks, builtin_rows, VT100_TERMINAL_CELL_HEIGHT);
 
   if ((cell->style & VT100_STYLE_UNDERLINE) != 0u) {
     row_masks[VT100_TERMINAL_CELL_HEIGHT - 1u] = (uint8_t)((1u << VT100_TERMINAL_GLYPH_WIDTH) - 1u);
