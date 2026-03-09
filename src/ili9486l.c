@@ -1,6 +1,7 @@
 #include "ili9486l.h"
 
 #include "font5x7.h"
+#include "ili9486l_internal.h"
 
 #include "hardware/dma.h"
 #include "hardware/spi.h"
@@ -47,9 +48,18 @@ static uint16_t g_scroll_bottom_fixed = 0;
 static uint16_t g_scroll_start = 0;
 static int g_spi_tx_dma_channel = -1;
 static dma_channel_config_t g_spi_tx_dma_config;
+static bool g_spi_tx_dma_in_flight = false;
+
+static void __not_in_flash_func(ili9486l_finish_spi_write)(void);
 
 static void __not_in_flash_func(ili9486l_set_dc)(uint8_t data_mode)
 {
+    if (g_spi_tx_dma_in_flight) {
+        dma_channel_wait_for_finish_blocking((uint)g_spi_tx_dma_channel);
+        g_spi_tx_dma_in_flight = false;
+        ili9486l_finish_spi_write();
+    }
+
     gpio_put(LCD_PIN_DC, data_mode);
     busy_wait_us_32(1);
 }
@@ -101,6 +111,17 @@ static bool __not_in_flash_func(ili9486l_write_dma_if_beneficial)(const uint8_t 
     dma_channel_wait_for_finish_blocking((uint)g_spi_tx_dma_channel);
     ili9486l_finish_spi_write();
     return true;
+}
+
+void __not_in_flash_func(ili9486l_wait_for_pending_write)(void)
+{
+    if (!g_spi_tx_dma_in_flight) {
+        return;
+    }
+
+    dma_channel_wait_for_finish_blocking((uint)g_spi_tx_dma_channel);
+    g_spi_tx_dma_in_flight = false;
+    ili9486l_finish_spi_write();
 }
 
 static void ili9486l_write_command(uint8_t command)
@@ -347,6 +368,32 @@ void __not_in_flash_func(ili9486l_write_rgb666_wire_pixels)(const uint8_t *pixel
     if (!ili9486l_write_dma_if_beneficial(pixels, len)) {
         spi_write_blocking(LCD_SPI_PORT, pixels, len);
     }
+}
+
+void __not_in_flash_func(ili9486l_write_rgb666_wire_pixels_async)(const uint8_t *pixels, size_t pixel_count)
+{
+    const size_t len = pixel_count * 3u;
+
+    if (pixels == NULL || pixel_count == 0u) {
+        return;
+    }
+
+    ili9486l_wait_for_pending_write();
+    ili9486l_set_dc(1);
+
+    if (len < ILI9486L_DMA_MIN_TRANSFER_BYTES || g_spi_tx_dma_channel < 0) {
+        spi_write_blocking(LCD_SPI_PORT, pixels, len);
+        return;
+    }
+
+    dma_channel_configure(
+        (uint)g_spi_tx_dma_channel,
+        &g_spi_tx_dma_config,
+        &spi_get_hw(LCD_SPI_PORT)->dr,
+        pixels,
+        dma_encode_transfer_count((uint)len),
+        true);
+    g_spi_tx_dma_in_flight = true;
 }
 
 void __not_in_flash_func(ili9486l_write_rgb888_as_rgb666_pixels)(const uint8_t *pixels, size_t pixel_count)

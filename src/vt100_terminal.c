@@ -2,6 +2,7 @@
 
 #include "font5x7.h"
 #include "ili9486l.h"
+#include "ili9486l_internal.h"
 
 #if defined(__has_include)
 #if __has_include("pico.h")
@@ -80,7 +81,7 @@ typedef struct {
     bool underline;
 } vt100_terminal_render_cache_t;
 
-static uint8_t g_scanline_buffer[VT100_TERMINAL_WIDTH_PIXELS * 3u];
+static uint8_t g_scanline_buffers[2][VT100_TERMINAL_WIDTH_PIXELS * 3u];
 static vt100_terminal_render_cache_t g_render_row_cache[VT100_TERMINAL_COLS];
 static void __not_in_flash_func(vt100_terminal_render_row)(vt100_terminal_t *terminal, uint8_t row);
 static void __not_in_flash_func(vt100_terminal_render_row_range)(vt100_terminal_t *terminal, uint8_t row,
@@ -642,6 +643,7 @@ static void __not_in_flash_func(vt100_terminal_render_row_range)(vt100_terminal_
 {
     const uint16_t pixel_x = (uint16_t)(terminal->origin_x + col_start * VT100_TERMINAL_CELL_WIDTH);
     const uint16_t pixel_w = (uint16_t)((uint16_t)(col_end - col_start + 1u) * VT100_TERMINAL_CELL_WIDTH);
+    uint8_t buffer_index = 0u;
 
     if (row >= VT100_TERMINAL_ROWS || col_start > col_end || col_end >= VT100_TERMINAL_COLS) {
         return;
@@ -662,7 +664,7 @@ static void __not_in_flash_func(vt100_terminal_render_row_range)(vt100_terminal_
     }
 
     for (uint8_t py = 0; py < VT100_TERMINAL_CELL_HEIGHT; ++py) {
-        uint8_t *dst = g_scanline_buffer;
+        uint8_t *dst = g_scanline_buffers[buffer_index];
 
         for (uint8_t col = col_start; col <= col_end; ++col) {
             const vt100_terminal_render_cache_t *render_data = &g_render_row_cache[col];
@@ -681,8 +683,11 @@ static void __not_in_flash_func(vt100_terminal_render_row_range)(vt100_terminal_
             }
         }
 
-        ili9486l_write_rgb666_wire_pixels(g_scanline_buffer, pixel_w);
+        ili9486l_write_rgb666_wire_pixels_async(g_scanline_buffers[buffer_index], pixel_w);
+        buffer_index ^= 1u;
     }
+
+    ili9486l_wait_for_pending_write();
 }
 
 static void __not_in_flash_func(vt100_terminal_render_row)(vt100_terminal_t *terminal, uint8_t row)
