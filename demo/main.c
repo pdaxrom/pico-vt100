@@ -6,8 +6,14 @@
 
 #include <stdio.h>
 
+#ifndef ILI9486L_LCD_DEMO_RUN_FPS_TEST
+#define ILI9486L_LCD_DEMO_RUN_FPS_TEST 1
+#endif
+
 extern const uint8_t g_logo_jpg_start[];
 extern const uint8_t g_logo_jpg_end[];
+
+static uint8_t g_full_redraw_scanline[LCD_NATIVE_HEIGHT * 3u];
 
 static void terminal_stdio_output(const char *data, size_t len, void *user_data)
 {
@@ -28,6 +34,92 @@ static void show_boot_logo(void)
     }
 
     sleep_ms(3000);
+}
+
+static void format_fixed_x10(char *dst, size_t dst_size, uint32_t value_x10)
+{
+    snprintf(dst, dst_size, "%lu.%01lu", (unsigned long)(value_x10 / 10u), (unsigned long)(value_x10 % 10u));
+}
+
+static void draw_full_redraw_benchmark_frame(uint32_t frame_index)
+{
+    const uint16_t width = ili9486l_width();
+    const uint16_t height = ili9486l_height();
+
+    if (!ili9486l_begin_write(0u, 0u, width, height)) {
+        return;
+    }
+
+    for (uint16_t y = 0; y < height; ++y) {
+        const uint8_t y6 = (height > 1u) ? (uint8_t)(((uint32_t)y * 63u) / (uint32_t)(height - 1u)) : 0u;
+
+        for (uint16_t x = 0; x < width; ++x) {
+            const uint8_t x6 = (width > 1u) ? (uint8_t)(((uint32_t)x * 63u) / (uint32_t)(width - 1u)) : 0u;
+            const uint8_t r6 = (uint8_t)((x6 + frame_index * 3u) & 0x3Fu);
+            const uint8_t g6 = (uint8_t)((y6 + frame_index * 5u) & 0x3Fu);
+            const uint8_t b6 = (uint8_t)(((x6 ^ y6) + frame_index * 7u) & 0x3Fu);
+            const size_t offset = (size_t)x * 3u;
+
+            g_full_redraw_scanline[offset + 0u] = (uint8_t)(r6 << 2);
+            g_full_redraw_scanline[offset + 1u] = (uint8_t)(g6 << 2);
+            g_full_redraw_scanline[offset + 2u] = (uint8_t)(b6 << 2);
+        }
+
+        ili9486l_write_rgb666_wire_pixels(g_full_redraw_scanline, width);
+    }
+}
+
+static void show_full_redraw_fps_test(void)
+{
+    static const uint32_t k_frame_count = 12u;
+    const uint16_t width = ili9486l_width();
+    const uint16_t height = ili9486l_height();
+    const uint64_t start_us = time_us_64();
+    char fps_text[16];
+    char ms_text[16];
+    char line[48];
+    uint64_t elapsed_us = 0u;
+    uint32_t fps_x10 = 0u;
+    uint32_t ms_per_frame_x10 = 0u;
+
+    for (uint32_t frame = 0; frame < k_frame_count; ++frame) {
+        draw_full_redraw_benchmark_frame(frame);
+    }
+
+    elapsed_us = time_us_64() - start_us;
+    if (elapsed_us == 0u) {
+        elapsed_us = 1u;
+    }
+
+    fps_x10 = (uint32_t)(((uint64_t)k_frame_count * 10000000u) / elapsed_us);
+    ms_per_frame_x10 = (uint32_t)((elapsed_us * 10u) / ((uint64_t)k_frame_count * 1000u));
+
+    format_fixed_x10(fps_text, sizeof(fps_text), fps_x10);
+    format_fixed_x10(ms_text, sizeof(ms_text), ms_per_frame_x10);
+
+    printf("FULL REDRAW FPS TEST: %s FPS, %s ms/frame, %lu frames at %ux%u\r\n",
+           fps_text,
+           ms_text,
+           (unsigned long)k_frame_count,
+           width,
+           height);
+
+    ili9486l_fill_screen(LCD_RGB666(0x02, 0x03, 0x06));
+    ili9486l_fill_rect(16, 18, 448, 284, LCD_RGB666(0x06, 0x08, 0x0C));
+    ili9486l_draw_string(34, 34, "FULL REDRAW TEST", LCD_COLOR_YELLOW, LCD_RGB666(0x06, 0x08, 0x0C), 2);
+    ili9486l_draw_string(34, 74, "STREAMING RGB666", LCD_COLOR_WHITE, LCD_RGB666(0x06, 0x08, 0x0C), 2);
+
+    snprintf(line, sizeof(line), "%s FPS", fps_text);
+    ili9486l_draw_string(34, 128, line, LCD_COLOR_CYAN, LCD_RGB666(0x06, 0x08, 0x0C), 3);
+
+    snprintf(line, sizeof(line), "%s MS/FRAME", ms_text);
+    ili9486l_draw_string(34, 180, line, LCD_COLOR_WHITE, LCD_RGB666(0x06, 0x08, 0x0C), 2);
+
+    snprintf(line, sizeof(line), "%lu FRAMES @ %ux%u", (unsigned long)k_frame_count, width, height);
+    ili9486l_draw_string(34, 224, line, LCD_COLOR_GREEN, LCD_RGB666(0x06, 0x08, 0x0C), 2);
+    ili9486l_draw_string(34, 268, "RESULT ALSO IN STDIO", LCD_COLOR_WHITE, LCD_RGB666(0x06, 0x08, 0x0C), 1);
+
+    sleep_ms(1500);
 }
 
 static void draw_native_scroll_demo_screen(uint16_t top_fixed, uint16_t bottom_fixed)
@@ -264,6 +356,9 @@ int main(void)
 
     ili9486l_init();
     show_boot_logo();
+#if ILI9486L_LCD_DEMO_RUN_FPS_TEST
+    show_full_redraw_fps_test();
+#endif
     terminal_origin_y = (uint16_t)((ili9486l_height() - VT100_TERMINAL_HEIGHT_PIXELS) / 2u);
     ili9486l_fill_screen(LCD_COLOR_BLACK);
     vt100_terminal_init(&terminal, 0, terminal_origin_y);

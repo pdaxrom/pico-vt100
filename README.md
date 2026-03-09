@@ -114,6 +114,7 @@ set(ILI9486L_LCD_BUILD_DEMO OFF CACHE BOOL "" FORCE)
 - `ILI9486L_LCD_BUILD_DEMO` - собрать demo из `demo/`
 - `ILI9486L_LCD_ENABLE_DEMO_STDIO_USB` - включить USB CDC для demo
 - `ILI9486L_LCD_ENABLE_DEMO_STDIO_UART` - включить UART stdio для demo
+- `ILI9486L_LCD_DEMO_RUN_FPS_TEST` - запускать on-device тест FPS для полной перерисовки экрана при старте demo
 - `ILI9486L_LCD_DEMO_LOGO_PATH` - путь к baseline JPEG, который будет вшит в demo ELF
 
 Если `demo/assets/logo.jpg` отсутствует, можно либо сгенерировать его скриптами ниже, либо передать альтернативный путь через `-DILI9486L_LCD_DEMO_LOGO_PATH=/abs/path/logo.jpg`.
@@ -282,11 +283,21 @@ void vt100_terminal_render(vt100_terminal_t *terminal);
 
 1. Инициализирует дисплей.
 2. Показывает встроенный `demo/assets/logo.jpg`.
-3. Запускает терминал `80x35`.
-4. Читает символы из `stdio`.
-5. Обновляет blink через `vt100_terminal_tick()`.
+3. По умолчанию прогоняет on-device benchmark полной перерисовки экрана и печатает FPS в `stdio`.
+4. Запускает терминал `80x35`.
+5. Читает символы из `stdio`.
+6. Обновляет blink через `vt100_terminal_tick()`.
 
 Demo использует и USB CDC, и UART stdio по умолчанию. Это можно отключить CMake-опциями `ILI9486L_LCD_ENABLE_DEMO_STDIO_USB` и `ILI9486L_LCD_ENABLE_DEMO_STDIO_UART`.
+
+Пример отключения benchmark:
+
+```bash
+cmake -S . -B build -DILI9486L_LCD_DEMO_RUN_FPS_TEST=OFF
+cmake --build build -j4
+```
+
+Во время benchmark demo делает несколько полных `480x320` redraw-кадров через public streaming API библиотеки и печатает средний FPS и `ms/frame` в `stdio`. Это замер верхнего предела для полного redraw по текущему SPI/RGB666 пути; он полезен как baseline для сравнения после оптимизаций.
 
 ## Подготовка boot logo
 
