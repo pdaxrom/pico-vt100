@@ -283,7 +283,7 @@ void vt100_terminal_render(vt100_terminal_t *terminal);
 
 1. Инициализирует дисплей.
 2. Показывает встроенный `demo/assets/logo.jpg`.
-3. По умолчанию прогоняет on-device benchmark полной перерисовки экрана и печатает FPS в `stdio`.
+3. По умолчанию прогоняет on-device benchmark: полный redraw экрана, полный `vt100_terminal_render()` и terminal scroll path.
 4. Запускает терминал `80x35`.
 5. Читает символы из `stdio`.
 6. Обновляет blink через `vt100_terminal_tick()`.
@@ -297,7 +297,13 @@ cmake -S . -B build -DILI9486L_LCD_DEMO_RUN_FPS_TEST=OFF
 cmake --build build -j4
 ```
 
-Во время benchmark demo делает несколько полных `480x320` redraw-кадров через public streaming API библиотеки и печатает средний FPS и `ms/frame` в `stdio`. Это замер верхнего предела для полного redraw по текущему SPI/RGB666 пути; он полезен как baseline для сравнения после оптимизаций.
+Во время benchmark demo делает три замера и печатает результаты в `stdio`:
+
+- полный `480x320` redraw через public streaming API библиотеки
+- полный `vt100_terminal_render()` для заполненного экрана `80x35`
+- terminal scroll path через серию новых `80`-колоночных строк
+
+Эти числа удобны как baseline после изменений в SPI path, DMA и VT100 renderer.
 
 ## Подготовка boot logo
 
