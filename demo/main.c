@@ -537,15 +537,16 @@ int main(void)
 #endif
     terminal_origin_y = (uint16_t)((ili9486l_height() - VT100_TERMINAL_HEIGHT_PIXELS) / 2u);
     ili9486l_fill_screen(LCD_COLOR_BLACK);
-    vt100_terminal_init(&terminal, 0, terminal_origin_y);
+    vt100_terminal_init(&terminal, 0u, terminal_origin_y);
     vt100_terminal_set_output(&terminal, terminal_stdio_output, NULL);
+    (void)vt100_terminal_getch(&terminal, PICO_ERROR_TIMEOUT);
     vt100_terminal_write(&terminal, "\x1b[2J\x1b[H");
-    vt100_terminal_write(&terminal, "ILI9486L VT100 TERMINAL 80X35\r\n");
-    vt100_terminal_write(&terminal, "UART/STDIO input is rendered directly to LCD.\r\n");
-    vt100_terminal_write(&terminal, "Supported: CSI A/B/C/D/E/F/G/H/I/S/T/Z/`/a/b/d/e/f/J/K/L/M/@/P/X.\r\n");
-    vt100_terminal_write(&terminal, "Plus: CSI m/r/n/c/g/h/l, ESC #8, DEC/UK/VT52, SS2/SS3, tab stops.\r\n");
-    vt100_terminal_write(&terminal, "Modes: IRM, LMN, DECSCNM, DECAWM, DECOM, DECANM, DECSTBM, RI, cursor show/hide.\r\n");
-    vt100_terminal_write(&terminal, "Blink: feed elapsed ms into vt100_terminal_tick() to animate SGR 5.\r\n");
+    vt100_terminal_write(&terminal, "ILI9486L VT100 TERMINAL 80X34 + STATUS\r\n");
+    vt100_terminal_write(&terminal, "Last line is reserved for status. Ctrl+E enters local command mode.\r\n");
+    vt100_terminal_write(&terminal, "Ctrl+E 1/2/3 switches 80x34 / 80x30 / 80x24. Ctrl+E S/P switches SCROLL / PAGED.\r\n");
+    vt100_terminal_write(&terminal, "In paged mode the status line asks for SPACE before a new page.\r\n");
+    vt100_terminal_write(&terminal, "Commands are handled locally by vt100_terminal_getch().\r\n");
+    vt100_terminal_write(&terminal, "Supported terminal core: ANSI, VT100, VT52, DEC graphics.\r\n");
     vt100_terminal_write(&terminal, "\r\n");
     vt100_terminal_write(&terminal, "\x1b[32mREADY\x1b[0m> ");
     last_terminal_tick_ms = (uint32_t)to_ms_since_boot(get_absolute_time());
@@ -557,9 +558,7 @@ int main(void)
         vt100_terminal_tick(&terminal, now_ms - last_terminal_tick_ms);
         last_terminal_tick_ms = now_ms;
 
-        if (ch != PICO_ERROR_TIMEOUT) {
-            vt100_terminal_putc(&terminal, (char)ch);
-        }
+        (void)vt100_terminal_getch(&terminal, ch);
 
         tight_loop_contents();
     }
