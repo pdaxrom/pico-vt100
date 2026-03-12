@@ -294,6 +294,37 @@ static int test_console_shortcuts_are_handled_in_library(void)
     return 0;
 }
 
+static int test_paged_mode_emits_xoff_xon(void)
+{
+    vt100_terminal_t terminal;
+    output_buffer_t output = {{0}, 0u};
+
+    vt100_terminal_init(&terminal, 0u, 0u);
+    vt100_terminal_set_output(&terminal, output_capture, &output);
+    CHECK(!vt100_terminal_getch(&terminal, -1));
+    CHECK(!vt100_terminal_getch(&terminal, '\x05'));
+    CHECK(!vt100_terminal_getch(&terminal, 'p'));
+
+    terminal.cursor_row = 33u;
+    terminal.cursor_col = 79u;
+    terminal.wrap_pending = true;
+    vt100_terminal_write(&terminal, "Y");
+
+    CHECK(output.len == 1u);
+    CHECK((unsigned char)output.data[0] == 0x13u);
+    CHECK(terminal.cells[0][0].ch != 'Y');
+
+    CHECK(!vt100_terminal_getch(&terminal, 'a'));
+    CHECK(!vt100_terminal_getch(&terminal, ' '));
+    CHECK(output.len == 2u);
+    CHECK((unsigned char)output.data[1] == 0x11u);
+
+    CHECK(!vt100_terminal_getch(&terminal, -1));
+    CHECK(terminal.cells[0][0].ch == 'Y');
+    CHECK(terminal.cells[0][1].ch == ' ');
+    return 0;
+}
+
 int main(void)
 {
     static const struct {
@@ -313,6 +344,7 @@ int main(void)
         {"esc_hash_3_to_6_are_noop", test_esc_hash_3_to_6_are_noop},
         {"blink_tick_toggles_visibility", test_blink_tick_toggles_visibility},
         {"console_shortcuts_are_handled_in_library", test_console_shortcuts_are_handled_in_library},
+        {"paged_mode_emits_xoff_xon", test_paged_mode_emits_xoff_xon},
     };
 
     for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {

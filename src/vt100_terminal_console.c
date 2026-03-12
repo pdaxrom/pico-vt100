@@ -35,6 +35,7 @@ typedef struct {
     bool wait_page;
     bool cmd;
     bool overflow;
+    bool remote_paused;
     bool last_vt52;
     uint8_t q[VT100_TERMINAL_CONSOLE_PENDING_QUEUE_SIZE];
 } console_t;
@@ -104,6 +105,24 @@ static void q_reset(console_t *c)
     c->tail = 0u;
     c->count = 0u;
     c->overflow = false;
+}
+
+static void flow(console_t *c, bool pause)
+{
+    static const char k_xoff = '\x13';
+    static const char k_xon = '\x11';
+    vt100_terminal_t *t = c->t;
+
+    if (c->remote_paused == pause) {
+        return;
+    }
+
+    c->remote_paused = pause;
+    if (t == NULL || t->output_fn == NULL) {
+        return;
+    }
+
+    t->output_fn(pause ? &k_xoff : &k_xon, 1u, t->output_user_data);
 }
 
 static bool q_push(console_t *c, char ch)
@@ -242,6 +261,7 @@ static void feed_remote(console_t *c, char ch)
     const bool old_vt52 = t->vt52_mode;
 
     if (pause_for_page(c, ch)) {
+        flow(c, true);
         c->wait_page = true;
         c->dirty = true;
         (void)q_push(c, ch);
@@ -274,6 +294,7 @@ static void apply_size(console_t *c, uint8_t size)
         return;
     }
     c->size = size;
+    flow(c, false);
     c->wait_page = false;
     c->cmd = false;
     q_reset(c);
@@ -288,15 +309,20 @@ static void apply_mode(console_t *c, uint8_t mode)
     c->cmd = false;
     c->dirty = true;
     if (mode == MODE_SCROLL && c->wait_page) {
+        flow(c, false);
         c->wait_page = false;
         poll(c);
         return;
+    }
+    if (mode == MODE_SCROLL) {
+        flow(c, false);
     }
     status(c);
 }
 
 static void next_page(console_t *c)
 {
+    flow(c, false);
     c->wait_page = false;
     c->overflow = false;
     c->cmd = false;
@@ -334,8 +360,6 @@ static bool local(console_t *c, char ch)
     if (c->wait_page) {
         if (ch == ' ') {
             next_page(c);
-        } else {
-            (void)q_push(c, ch);
         }
         return true;
     }
