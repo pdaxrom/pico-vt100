@@ -133,7 +133,7 @@ int main(void)
     demo_show_full_redraw_fps_test(drv);
     sleep_ms(1500);
     demo_show_terminal_benchmark_results(drv,
-        (uint16_t)((lcd_height(drv) - VT100_TERMINAL_HEIGHT_PIXELS) / 2u));
+        (uint16_t)((lcd_height(drv) - VT100_TERMINAL_HEIGHT_PIXELS) / 2u), &terminal);
     sleep_ms(1800);
 #endif
     terminal_origin_y = (uint16_t)((lcd_height(drv) - VT100_TERMINAL_HEIGHT_PIXELS) / 2u);

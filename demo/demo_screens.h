@@ -23,7 +23,7 @@ void demo_show_color_test_screen(lcd_driver_t *drv);
 void demo_draw_demo_screen(lcd_driver_t *drv);
 void demo_run_full_redraw_fps_test(lcd_driver_t *drv, benchmark_result_t *result);
 void demo_show_full_redraw_fps_test(lcd_driver_t *drv);
-void demo_show_terminal_benchmark_results(lcd_driver_t *drv, uint16_t origin_y);
+void demo_show_terminal_benchmark_results(lcd_driver_t *drv, uint16_t origin_y, vt100_terminal_t *scratch);
 
 #ifdef __cplusplus
 }

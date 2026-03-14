@@ -168,10 +168,10 @@ static size_t build_terminal_benchmark_line(char *dst, uint32_t line_index)
     return VT100_TERMINAL_COLS + 2u;
 }
 
-static void run_terminal_render_fps_test(lcd_driver_t *drv, uint16_t origin_y, benchmark_result_t *result)
+static void run_terminal_render_fps_test(lcd_driver_t *drv, uint16_t origin_y, vt100_terminal_t *terminal,
+                                         benchmark_result_t *result)
 {
     static const uint32_t k_frame_count = 6u;
-    static vt100_terminal_t terminal;
     uint64_t elapsed_us = 0u;
     const uint64_t start_us = g_time_fn();
 
@@ -179,10 +179,10 @@ static void run_terminal_render_fps_test(lcd_driver_t *drv, uint16_t origin_y, b
         return;
     }
 
-    prepare_terminal_render_benchmark(drv, &terminal, origin_y);
+    prepare_terminal_render_benchmark(drv, terminal, origin_y);
 
     for (uint32_t frame = 0; frame < k_frame_count; ++frame) {
-        vt100_terminal_render(&terminal);
+        vt100_terminal_render(terminal);
     }
 
     elapsed_us = g_time_fn() - start_us;
@@ -194,10 +194,10 @@ static void run_terminal_render_fps_test(lcd_driver_t *drv, uint16_t origin_y, b
     result->ms_x10 = (uint32_t)((elapsed_us * 10u) / ((uint64_t)k_frame_count * 1000u));
 }
 
-static void run_terminal_scroll_fps_test(lcd_driver_t *drv, uint16_t origin_y, benchmark_result_t *result)
+static void run_terminal_scroll_fps_test(lcd_driver_t *drv, uint16_t origin_y, vt100_terminal_t *terminal,
+                                         benchmark_result_t *result)
 {
     static const uint32_t k_scroll_count = 12u;
-    static vt100_terminal_t terminal;
     char line[VT100_TERMINAL_COLS + 2u];
     uint64_t elapsed_us = 0u;
 
@@ -205,11 +205,11 @@ static void run_terminal_scroll_fps_test(lcd_driver_t *drv, uint16_t origin_y, b
         return;
     }
 
-    vt100_terminal_init(&terminal, drv, 0u, origin_y);
+    vt100_terminal_init(terminal, drv, 0u, origin_y);
 
     for (uint32_t row = 0; row < (uint32_t)(VT100_TERMINAL_ROWS - 1u); ++row) {
         const size_t len = build_terminal_benchmark_line(line, row);
-        vt100_terminal_write_n(&terminal, line, len);
+        vt100_terminal_write_n(terminal, line, len);
     }
 
     {
@@ -217,7 +217,7 @@ static void run_terminal_scroll_fps_test(lcd_driver_t *drv, uint16_t origin_y, b
 
         for (uint32_t row = 0; row < k_scroll_count; ++row) {
             const size_t len = build_terminal_benchmark_line(line, 1000u + row);
-            vt100_terminal_write_n(&terminal, line, len);
+            vt100_terminal_write_n(terminal, line, len);
         }
 
         elapsed_us = g_time_fn() - start_us;
@@ -231,7 +231,7 @@ static void run_terminal_scroll_fps_test(lcd_driver_t *drv, uint16_t origin_y, b
     result->ms_x10 = (uint32_t)((elapsed_us * 10u) / ((uint64_t)k_scroll_count * 1000u));
 }
 
-void demo_show_terminal_benchmark_results(lcd_driver_t *drv, uint16_t origin_y)
+void demo_show_terminal_benchmark_results(lcd_driver_t *drv, uint16_t origin_y, vt100_terminal_t *scratch)
 {
     benchmark_result_t render_result;
     benchmark_result_t scroll_result;
@@ -243,8 +243,8 @@ void demo_show_terminal_benchmark_results(lcd_driver_t *drv, uint16_t origin_y)
     const lcd_color_t background = LCD_RGB666(0x03, 0x03, 0x06);
     const lcd_color_t panel = LCD_RGB666(0x06, 0x08, 0x0C);
 
-    run_terminal_render_fps_test(drv, origin_y, &render_result);
-    run_terminal_scroll_fps_test(drv, origin_y, &scroll_result);
+    run_terminal_render_fps_test(drv, origin_y, scratch, &render_result);
+    run_terminal_scroll_fps_test(drv, origin_y, scratch, &scroll_result);
 
     format_fixed_x10(render_rate_text, sizeof(render_rate_text), render_result.rate_x10);
     format_fixed_x10(render_ms_text, sizeof(render_ms_text), render_result.ms_x10);
