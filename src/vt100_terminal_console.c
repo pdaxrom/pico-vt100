@@ -1,7 +1,7 @@
 #include "vt100_terminal_console.h"
 #include "vt100_terminal_internal.h"
 
-#include "ili9486l.h"
+#include "lcd_text.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -187,8 +187,8 @@ static void status(console_t *c)
     }
     memcpy(buf, line, n);
 
-    ili9486l_fill_rect(x, y, VT100_TERMINAL_WIDTH_PIXELS, VT100_TERMINAL_CELL_HEIGHT, bg);
-    ili9486l_draw_string(x, (uint16_t)(y + 1u), buf, fg, bg, 1u);
+    lcd_fill_rect(t->display, x, y, VT100_TERMINAL_WIDTH_PIXELS, VT100_TERMINAL_CELL_HEIGHT, bg);
+    lcd_draw_string(t->display, x, (uint16_t)(y + 1u), buf, fg, bg, 1u);
     c->dirty = false;
 }
 

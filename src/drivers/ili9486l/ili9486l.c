@@ -1,8 +1,5 @@
 #include "ili9486l.h"
 
-#include "font5x7.h"
-#include "ili9486l_internal.h"
-
 #include "hardware/dma.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
@@ -37,7 +34,6 @@
 #define LCD_PIN_BLK (-1)
 #endif
 
-#define ILI9486L_FAST_TEXT_SCALE_MAX 4u
 #define ILI9486L_DMA_MIN_TRANSFER_BYTES 256u
 
 static uint16_t g_width = LCD_NATIVE_WIDTH;
@@ -51,6 +47,17 @@ static dma_channel_config_t g_spi_tx_dma_config;
 static bool g_spi_tx_dma_in_flight = false;
 
 static void __not_in_flash_func(ili9486l_finish_spi_write)(void);
+
+/* Forward declarations for functions used before their definitions. */
+uint16_t ili9486l_width(void);
+uint16_t ili9486l_height(void);
+void ili9486l_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, lcd_color_t color);
+void ili9486l_fill_screen(lcd_color_t color);
+bool ili9486l_begin_write(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+void ili9486l_write_rgb666_wire_pixels(const uint8_t *pixels, size_t pixel_count);
+void ili9486l_draw_rgb666_wire_rect(const uint8_t *bitmap, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+void ili9486l_write_rgb666_wire_pixels_async(const uint8_t *pixels, size_t pixel_count);
+void ili9486l_wait_for_pending_write(void);
 
 static void __not_in_flash_func(ili9486l_set_dc)(uint8_t data_mode)
 {
@@ -605,102 +612,85 @@ void ili9486l_fill_screen(lcd_color_t color)
     ili9486l_fill_rect(0, 0, g_width, g_height, color);
 }
 
-static void ili9486l_draw_char_slow(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg, uint8_t scale)
+static uint16_t ili9486l_ops_width(lcd_driver_t *drv)
 {
-    const uint8_t *glyph = font5x7_get_glyph(c);
-
-    ili9486l_fill_rect(x, y, (uint16_t)(6u * scale), (uint16_t)(8u * scale), bg);
-
-    for (uint8_t col = 0; col < FONT5X7_WIDTH; ++col) {
-        const uint8_t column_bits = glyph[col];
-
-        for (uint8_t row = 0; row < FONT5X7_HEIGHT; ++row) {
-            if ((column_bits & (1u << row)) != 0u) {
-                ili9486l_fill_rect((uint16_t)(x + col * scale), (uint16_t)(y + row * scale), scale, scale, fg);
-            }
-        }
-    }
+    (void)drv;
+    return g_width;
 }
 
-void __not_in_flash_func(ili9486l_draw_char)(uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg,
-                                             uint8_t scale)
+static uint16_t ili9486l_ops_height(lcd_driver_t *drv)
 {
-    const uint8_t *glyph_rows;
-    const uint16_t glyph_w = (uint16_t)(6u * scale);
-    const uint16_t glyph_h = (uint16_t)(8u * scale);
-    uint8_t row_pixels[6u * ILI9486L_FAST_TEXT_SCALE_MAX * 3u];
-    uint8_t fg_wire[3];
-    uint8_t bg_wire[3];
-
-    if (scale == 0 || x >= g_width || y >= g_height) {
-        return;
-    }
-
-    glyph_rows = font5x7_get_cell6x8_row_masks(c);
-    if (scale > ILI9486L_FAST_TEXT_SCALE_MAX || (uint32_t)x + glyph_w > g_width || (uint32_t)y + glyph_h > g_height) {
-        ili9486l_draw_char_slow(x, y, c, fg, bg, scale);
-        return;
-    }
-
-    ili9486l_color_to_rgb666(fg, fg_wire);
-    ili9486l_color_to_rgb666(bg, bg_wire);
-
-    if (!ili9486l_begin_write(x, y, glyph_w, glyph_h)) {
-        return;
-    }
-
-    for (uint8_t glyph_row = 0; glyph_row < 8u; ++glyph_row) {
-        const uint8_t row_mask = glyph_rows[glyph_row];
-
-        for (uint8_t sy = 0; sy < scale; ++sy) {
-            uint8_t *dst = row_pixels;
-
-            for (uint8_t col = 0; col < 6u; ++col) {
-                const bool pixel_on = (row_mask & (1u << col)) != 0u;
-                const uint8_t *color = pixel_on ? fg_wire : bg_wire;
-
-                for (uint8_t sx = 0; sx < scale; ++sx) {
-                    dst[0] = color[0];
-                    dst[1] = color[1];
-                    dst[2] = color[2];
-                    dst += 3;
-                }
-            }
-
-            ili9486l_write_rgb666_wire_pixels(row_pixels, glyph_w);
-        }
-    }
+    (void)drv;
+    return g_height;
 }
 
-void ili9486l_draw_string(uint16_t x, uint16_t y, const char *text, lcd_color_t fg, lcd_color_t bg, uint8_t scale)
+static void ili9486l_ops_fill_rect(lcd_driver_t *drv, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                                   lcd_color_t color)
 {
-    const uint16_t start_x = x;
-    const uint16_t advance_x = (uint16_t)(6u * scale);
-    const uint16_t advance_y = (uint16_t)(8u * scale);
+    (void)drv;
+    ili9486l_fill_rect(x, y, w, h, color);
+}
 
-    if (text == NULL || scale == 0) {
-        return;
-    }
+static void ili9486l_ops_fill_screen(lcd_driver_t *drv, lcd_color_t color)
+{
+    (void)drv;
+    ili9486l_fill_screen(color);
+}
 
-    while (*text != '\0') {
-        if (*text == '\n') {
-            x = start_x;
-            y = (uint16_t)(y + advance_y);
-            ++text;
-            continue;
-        }
+static void ili9486l_ops_draw_rgb666_wire_rect(lcd_driver_t *drv, const uint8_t *bmp, uint16_t x, uint16_t y,
+                                               uint16_t w, uint16_t h)
+{
+    (void)drv;
+    ili9486l_draw_rgb666_wire_rect(bmp, x, y, w, h);
+}
 
-        if ((uint32_t)x + advance_x > g_width) {
-            x = start_x;
-            y = (uint16_t)(y + advance_y);
-        }
+static bool __not_in_flash_func(ili9486l_ops_begin_write)(lcd_driver_t *drv, uint16_t x, uint16_t y, uint16_t w,
+                                                          uint16_t h)
+{
+    (void)drv;
+    return ili9486l_begin_write(x, y, w, h);
+}
 
-        if ((uint32_t)y + advance_y > g_height) {
-            break;
-        }
+static void __not_in_flash_func(ili9486l_ops_write_pixels)(lcd_driver_t *drv, const uint8_t *pixels,
+                                                           size_t pixel_count)
+{
+    (void)drv;
+    ili9486l_write_rgb666_wire_pixels_async(pixels, pixel_count);
+}
 
-        ili9486l_draw_char(x, y, *text, fg, bg, scale);
-        x = (uint16_t)(x + advance_x);
-        ++text;
-    }
+static void __not_in_flash_func(ili9486l_ops_flush)(lcd_driver_t *drv)
+{
+    (void)drv;
+    ili9486l_wait_for_pending_write();
+}
+
+static const lcd_driver_ops_t g_ili9486l_ops = {
+    .width = ili9486l_ops_width,
+    .height = ili9486l_ops_height,
+    .fill_rect = ili9486l_ops_fill_rect,
+    .fill_screen = ili9486l_ops_fill_screen,
+    .draw_rgb666_wire_rect = ili9486l_ops_draw_rgb666_wire_rect,
+    .begin_write = ili9486l_ops_begin_write,
+    .write_pixels = ili9486l_ops_write_pixels,
+    .flush = ili9486l_ops_flush,
+};
+
+static lcd_driver_t g_ili9486l_driver = {
+    .ops = &g_ili9486l_ops,
+};
+
+lcd_driver_t *ili9486l_get_driver(void)
+{
+    return &g_ili9486l_driver;
+}
+
+lcd_driver_t *lcd_init(void)
+{
+    ili9486l_init();
+    return &g_ili9486l_driver;
+}
+
+void lcd_destroy(lcd_driver_t *drv)
+{
+    (void)drv;
 }

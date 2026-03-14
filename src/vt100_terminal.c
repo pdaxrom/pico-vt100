@@ -3,8 +3,6 @@
 #include "vt100_terminal_internal.h"
 
 #include "font5x7.h"
-#include "ili9486l.h"
-#include "ili9486l_internal.h"
 
 #if defined(__has_include)
 #if __has_include("pico.h")
@@ -614,7 +612,8 @@ static void __not_in_flash_func(vt100_terminal_render_cell_internal)(const vt100
         }
     }
 
-    ili9486l_draw_rgb666_wire_rect(
+    lcd_draw_rgb666_wire_rect(
+        terminal->display,
         cell_pixels,
         (uint16_t)(terminal->origin_x + col * VT100_TERMINAL_CELL_WIDTH),
         (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),
@@ -657,7 +656,8 @@ static void __not_in_flash_func(vt100_terminal_render_row_range)(vt100_terminal_
         vt100_terminal_prepare_cell_render(terminal, cell, false, &g_render_row_cache[col]);
     }
 
-    if (!ili9486l_begin_write(
+    if (!lcd_begin_write(
+                terminal->display,
                 pixel_x,
                 (uint16_t)(terminal->origin_y + row * VT100_TERMINAL_CELL_HEIGHT),
                 pixel_w,
@@ -685,11 +685,11 @@ static void __not_in_flash_func(vt100_terminal_render_row_range)(vt100_terminal_
             }
         }
 
-        ili9486l_write_rgb666_wire_pixels_async(g_scanline_buffers[buffer_index], pixel_w);
+        lcd_write_pixels(terminal->display, g_scanline_buffers[buffer_index], pixel_w);
         buffer_index ^= 1u;
     }
 
-    ili9486l_wait_for_pending_write();
+    lcd_flush(terminal->display);
 }
 
 static void __not_in_flash_func(vt100_terminal_render_row)(vt100_terminal_t *terminal, uint8_t row)
@@ -1526,7 +1526,8 @@ void vt100_terminal_reset(vt100_terminal_t *terminal)
             vt100_terminal_current_style(terminal));
     }
 
-    ili9486l_fill_rect(
+    lcd_fill_rect(
+        terminal->display,
         terminal->origin_x,
         terminal->origin_y,
         VT100_TERMINAL_WIDTH_PIXELS,
@@ -1536,9 +1537,10 @@ void vt100_terminal_reset(vt100_terminal_t *terminal)
     vt100_terminal_render(terminal);
 }
 
-void vt100_terminal_init(vt100_terminal_t *terminal, uint16_t origin_x, uint16_t origin_y)
+void vt100_terminal_init(vt100_terminal_t *terminal, lcd_driver_t *display, uint16_t origin_x, uint16_t origin_y)
 {
     memset(terminal, 0, sizeof(*terminal));
+    terminal->display = display;
     terminal->origin_x = origin_x;
     terminal->origin_y = origin_y;
     terminal->cursor_visible = true;

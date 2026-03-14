@@ -9,10 +9,11 @@ set(CMAKE_C_EXTENSIONS OFF)
 enable_testing()
 
 add_executable(vt100_terminal_tests
-  ili9486l_stub.c
+  lcd_driver_stub.c
   vt100_terminal_test.c
   ../../src/font5x7.c
   ../../src/font5x7_row_masks.c
+  ../../src/lcd_text.c
   ../../src/vt100_terminal.c
   ../../src/vt100_terminal_console.c
 )

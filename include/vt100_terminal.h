@@ -1,6 +1,8 @@
 #ifndef VT100_TERMINAL_H
 #define VT100_TERMINAL_H
 
+#include "lcd_driver.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +34,7 @@ typedef struct {
 } vt100_terminal_cell_t;
 
 struct vt100_terminal {
+    lcd_driver_t *display;
     uint16_t origin_x;
     uint16_t origin_y;
     uint8_t cursor_row;
@@ -97,7 +100,7 @@ struct vt100_terminal {
     uint16_t csi_params[8];
 };
 
-void vt100_terminal_init(vt100_terminal_t *terminal, uint16_t origin_x, uint16_t origin_y);
+void vt100_terminal_init(vt100_terminal_t *terminal, lcd_driver_t *display, uint16_t origin_x, uint16_t origin_y);
 void vt100_terminal_set_getch_hook(vt100_terminal_t *terminal, vt100_terminal_getch_hook_fn getch_hook,
                                    void *user_data);
 bool vt100_terminal_getch(vt100_terminal_t *terminal, int ch);
