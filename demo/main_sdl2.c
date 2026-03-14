@@ -5,9 +5,19 @@
 #include "vt100_terminal.h"
 
 #include <SDL.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <time.h>
+#include <unistd.h>
+
+static int g_listen_fd = -1;
+static int g_client_fd = -1;
+static const char *g_socket_path = NULL;
 
 static bool sdl2_delay_with_events(uint32_t ms)
 {
@@ -34,6 +44,93 @@ static uint64_t host_time_us(void)
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
+}
+
+static int create_listen_socket(const char *path)
+{
+    struct sockaddr_un addr;
+    int fd;
+
+    unlink(path);
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(fd);
+        return -1;
+    }
+
+    if (listen(fd, 1) < 0) {
+        close(fd);
+        unlink(path);
+        return -1;
+    }
+
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    return fd;
+}
+
+static int accept_client(void)
+{
+    int fd;
+
+    if (g_listen_fd < 0) {
+        return -1;
+    }
+
+    fd = accept(g_listen_fd, NULL, NULL);
+    if (fd < 0) {
+        return -1;
+    }
+
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    return fd;
+}
+
+static void socket_send(const void *data, size_t len)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    size_t remaining = len;
+
+    if (g_client_fd < 0) {
+        return;
+    }
+
+    while (remaining > 0) {
+        ssize_t n = write(g_client_fd, p, remaining);
+
+        if (n > 0) {
+            p += n;
+            remaining -= (size_t)n;
+        } else if (n < 0 && errno == EAGAIN) {
+            continue;
+        } else {
+            break;
+        }
+    }
+}
+
+static void socket_terminal_output(const char *data, size_t len, void *user_data)
+{
+    (void)user_data;
+
+    socket_send(data, len);
+}
+
+static bool socket_getch_hook(vt100_terminal_t *terminal, char ch, void *user_data)
+{
+    (void)terminal;
+    (void)user_data;
+
+    socket_send(&ch, 1);
+    return true;
 }
 
 static void show_boot_logo(lcd_driver_t *drv, const char *path)
@@ -95,8 +192,12 @@ static void sdl2_terminal_output(const char *data, size_t len, void *user_data)
 
 static void send_escape_sequence(vt100_terminal_t *terminal, const char *seq)
 {
-    while (*seq != '\0') {
-        vt100_terminal_putc(terminal, *seq++);
+    if (g_client_fd >= 0) {
+        socket_send(seq, strlen(seq));
+    } else {
+        while (*seq != '\0') {
+            vt100_terminal_putc(terminal, *seq++);
+        }
     }
 }
 
@@ -164,12 +265,35 @@ int main(int argc, char *argv[])
 {
     static vt100_terminal_t terminal;
     lcd_driver_t *drv = NULL;
+    const char *socket_path = NULL;
     uint16_t terminal_origin_y = 0;
     uint32_t last_tick_ms = 0;
     bool running = true;
 
-    (void)argc;
-    (void)argv;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--socket") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --socket requires a path argument\n\n");
+                fprintf(stderr, "Usage: %s [OPTIONS]\n", argv[0]);
+                fprintf(stderr, "  --socket <path>   Create a Unix socket at <path> for terminal I/O\n");
+                return 1;
+            }
+
+            socket_path = argv[++i];
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            fprintf(stdout, "Usage: %s [OPTIONS]\n\n", argv[0]);
+            fprintf(stdout, "Options:\n");
+            fprintf(stdout, "  --socket <path>   Create a Unix socket at <path> for terminal I/O\n");
+            fprintf(stdout, "  -h, --help        Show this help message\n");
+            return 0;
+        } else {
+            fprintf(stderr, "Unknown option: %s\n\n", argv[i]);
+            fprintf(stderr, "Usage: %s [OPTIONS]\n", argv[0]);
+            fprintf(stderr, "  --socket <path>   Create a Unix socket at <path> for terminal I/O\n");
+            fprintf(stderr, "  -h, --help        Show this help message\n");
+            return 1;
+        }
+    }
 
     demo_set_time_fn(host_time_us);
 
@@ -196,10 +320,32 @@ int main(int argc, char *argv[])
     vt100_terminal_init(&terminal, drv, 0u, terminal_origin_y);
     vt100_terminal_set_output(&terminal, sdl2_terminal_output, NULL);
     (void)vt100_terminal_getch(&terminal, -1);
+
+    if (socket_path != NULL) {
+        g_socket_path = socket_path;
+        g_listen_fd = create_listen_socket(socket_path);
+        if (g_listen_fd < 0) {
+            fprintf(stderr, "Failed to create socket: %s\n", socket_path);
+            lcd_destroy(drv);
+            return 1;
+        }
+
+        vt100_terminal_set_output(&terminal, socket_terminal_output, NULL);
+        vt100_terminal_set_getch_hook(&terminal, socket_getch_hook, NULL);
+    }
+
     vt100_terminal_write(&terminal, "\x1b[2J\x1b[H");
     vt100_terminal_write(&terminal, "SDL2 VT100 TERMINAL 80X34 + STATUS\r\n");
     vt100_terminal_write(&terminal, "Last line is reserved for status. Ctrl+E enters local command mode.\r\n");
     vt100_terminal_write(&terminal, "Type text. Arrow keys, function keys, Page Up/Down supported.\r\n");
+
+    if (g_listen_fd >= 0) {
+        char msg[128];
+
+        snprintf(msg, sizeof(msg), "Listening on %s\r\n", socket_path);
+        vt100_terminal_write(&terminal, msg);
+    }
+
     vt100_terminal_write(&terminal, "\r\n");
     vt100_terminal_write(&terminal, "\x1b[32mREADY\x1b[0m> ");
     sdl2_lcd_present(drv);
@@ -230,9 +376,43 @@ int main(int argc, char *argv[])
             }
         }
 
+        if (g_listen_fd >= 0 && g_client_fd < 0) {
+            int fd = accept_client();
+
+            if (fd >= 0) {
+                g_client_fd = fd;
+                vt100_terminal_write(&terminal, "\r\n\x1b[33m[client connected]\x1b[0m\r\n");
+            }
+        }
+
+        if (g_client_fd >= 0) {
+            uint8_t buf[512];
+            ssize_t n = read(g_client_fd, buf, sizeof(buf));
+
+            if (n > 0) {
+                vt100_terminal_write_n(&terminal, (const char *)buf, (size_t)n);
+            } else if (n == 0) {
+                vt100_terminal_write(&terminal, "\r\n\x1b[31m[client disconnected]\x1b[0m\r\n");
+                close(g_client_fd);
+                g_client_fd = -1;
+            }
+        }
+
         (void)vt100_terminal_getch(&terminal, -1);
         sdl2_lcd_present(drv);
         SDL_Delay(16);
+    }
+
+    if (g_client_fd >= 0) {
+        close(g_client_fd);
+    }
+
+    if (g_listen_fd >= 0) {
+        close(g_listen_fd);
+    }
+
+    if (g_socket_path != NULL) {
+        unlink(g_socket_path);
     }
 
     lcd_destroy(drv);
