@@ -64,6 +64,7 @@ else()
   # --- SDL2 host target ---
   add_executable(lcd_demo_sdl2
     demo_screens.c
+    serial_port.c
     main_sdl2.c
   )
 

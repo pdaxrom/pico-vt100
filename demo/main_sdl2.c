@@ -2,22 +2,30 @@
 #include "drivers/sdl2/sdl2_lcd.h"
 #include "lcd_jpeg.h"
 #include "lcd_text.h"
+#include "serial_port.h"
 #include "vt100_terminal.h"
 
 #include <SDL.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+#ifndef _WIN32
+#include <errno.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <time.h>
 #include <unistd.h>
+#endif
 
+#ifndef _WIN32
 static int g_listen_fd = -1;
 static int g_client_fd = -1;
 static const char *g_socket_path = NULL;
+#endif
+
+static serial_port_t *g_serial_port = NULL;
 
 static bool sdl2_delay_with_events(uint32_t ms)
 {
@@ -46,6 +54,7 @@ static uint64_t host_time_us(void)
     return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
 }
 
+#ifndef _WIN32
 static int create_listen_socket(const char *path)
 {
     struct sockaddr_un addr;
@@ -116,20 +125,46 @@ static void socket_send(const void *data, size_t len)
         }
     }
 }
+#endif
 
-static void socket_terminal_output(const char *data, size_t len, void *user_data)
+static void remote_send(const void *data, size_t len)
+{
+#ifndef _WIN32
+    if (g_client_fd >= 0) {
+        socket_send(data, len);
+        return;
+    }
+#endif
+
+    if (g_serial_port != NULL) {
+        serial_port_write(g_serial_port, data, len);
+    }
+}
+
+static bool has_remote_connection(void)
+{
+#ifndef _WIN32
+    if (g_client_fd >= 0) {
+        return true;
+    }
+#endif
+
+    return g_serial_port != NULL;
+}
+
+static void remote_terminal_output(const char *data, size_t len, void *user_data)
 {
     (void)user_data;
 
-    socket_send(data, len);
+    remote_send(data, len);
 }
 
-static bool socket_getch_hook(vt100_terminal_t *terminal, char ch, void *user_data)
+static bool remote_getch_hook(vt100_terminal_t *terminal, char ch, void *user_data)
 {
     (void)terminal;
     (void)user_data;
 
-    socket_send(&ch, 1);
+    remote_send(&ch, 1);
     return true;
 }
 
@@ -192,8 +227,8 @@ static void sdl2_terminal_output(const char *data, size_t len, void *user_data)
 
 static void send_escape_sequence(vt100_terminal_t *terminal, const char *seq)
 {
-    if (g_client_fd >= 0) {
-        socket_send(seq, strlen(seq));
+    if (has_remote_connection()) {
+        remote_send(seq, strlen(seq));
     } else {
         while (*seq != '\0') {
             vt100_terminal_putc(terminal, *seq++);
@@ -266,6 +301,8 @@ int main(int argc, char *argv[])
     static vt100_terminal_t terminal;
     lcd_driver_t *drv = NULL;
     const char *socket_path = NULL;
+    const char *serial_device = NULL;
+    uint32_t serial_baud = 115200;
     uint16_t terminal_origin_y = 0;
     uint32_t last_tick_ms = 0;
     bool running = true;
@@ -274,25 +311,55 @@ int main(int argc, char *argv[])
         if (strcmp(argv[i], "--socket") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: --socket requires a path argument\n\n");
-                fprintf(stderr, "Usage: %s [OPTIONS]\n", argv[0]);
-                fprintf(stderr, "  --socket <path>   Create a Unix socket at <path> for terminal I/O\n");
-                return 1;
+                goto usage_error;
             }
 
             socket_path = argv[++i];
+        } else if (strcmp(argv[i], "--serial-port") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --serial-port requires a device path\n\n");
+                goto usage_error;
+            }
+
+            serial_device = argv[++i];
+        } else if (strcmp(argv[i], "--serial-baud") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --serial-baud requires a baud rate\n\n");
+                goto usage_error;
+            }
+
+            serial_baud = (uint32_t)strtoul(argv[++i], NULL, 10);
+            if (serial_baud == 0) {
+                fprintf(stderr, "Error: invalid baud rate\n\n");
+                goto usage_error;
+            }
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             fprintf(stdout, "Usage: %s [OPTIONS]\n\n", argv[0]);
             fprintf(stdout, "Options:\n");
-            fprintf(stdout, "  --socket <path>   Create a Unix socket at <path> for terminal I/O\n");
-            fprintf(stdout, "  -h, --help        Show this help message\n");
+            fprintf(stdout, "  --socket <path>          Unix socket for terminal I/O\n");
+            fprintf(stdout, "  --serial-port <device>   Serial port for terminal I/O (8N1)\n");
+            fprintf(stdout, "  --serial-baud <rate>     Baud rate (default: 115200)\n");
+            fprintf(stdout, "  -h, --help               Show this help message\n");
             return 0;
         } else {
             fprintf(stderr, "Unknown option: %s\n\n", argv[i]);
-            fprintf(stderr, "Usage: %s [OPTIONS]\n", argv[0]);
-            fprintf(stderr, "  --socket <path>   Create a Unix socket at <path> for terminal I/O\n");
-            fprintf(stderr, "  -h, --help        Show this help message\n");
-            return 1;
+            goto usage_error;
         }
+    }
+
+    if (socket_path != NULL && serial_device != NULL) {
+        fprintf(stderr, "Error: --socket and --serial-port are mutually exclusive\n\n");
+        goto usage_error;
+    }
+
+    if (0) {
+usage_error:
+        fprintf(stderr, "Usage: %s [OPTIONS]\n", argv[0]);
+        fprintf(stderr, "  --socket <path>          Unix socket for terminal I/O\n");
+        fprintf(stderr, "  --serial-port <device>   Serial port for terminal I/O (8N1)\n");
+        fprintf(stderr, "  --serial-baud <rate>     Baud rate (default: 115200)\n");
+        fprintf(stderr, "  -h, --help               Show this help message\n");
+        return 1;
     }
 
     demo_set_time_fn(host_time_us);
@@ -321,6 +388,7 @@ int main(int argc, char *argv[])
     vt100_terminal_set_output(&terminal, sdl2_terminal_output, NULL);
     (void)vt100_terminal_getch(&terminal, -1);
 
+#ifndef _WIN32
     if (socket_path != NULL) {
         g_socket_path = socket_path;
         g_listen_fd = create_listen_socket(socket_path);
@@ -330,8 +398,22 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        vt100_terminal_set_output(&terminal, socket_terminal_output, NULL);
-        vt100_terminal_set_getch_hook(&terminal, socket_getch_hook, NULL);
+        vt100_terminal_set_output(&terminal, remote_terminal_output, NULL);
+        vt100_terminal_set_getch_hook(&terminal, remote_getch_hook, NULL);
+    }
+#endif
+
+    if (serial_device != NULL) {
+        g_serial_port = serial_port_open(serial_device, serial_baud);
+        if (g_serial_port == NULL) {
+            fprintf(stderr, "Failed to open serial port: %s at %u baud\n",
+                    serial_device, (unsigned)serial_baud);
+            lcd_destroy(drv);
+            return 1;
+        }
+
+        vt100_terminal_set_output(&terminal, remote_terminal_output, NULL);
+        vt100_terminal_set_getch_hook(&terminal, remote_getch_hook, NULL);
     }
 
     vt100_terminal_write(&terminal, "\x1b[2J\x1b[H");
@@ -339,10 +421,20 @@ int main(int argc, char *argv[])
     vt100_terminal_write(&terminal, "Last line is reserved for status. Ctrl+E enters local command mode.\r\n");
     vt100_terminal_write(&terminal, "Type text. Arrow keys, function keys, Page Up/Down supported.\r\n");
 
+#ifndef _WIN32
     if (g_listen_fd >= 0) {
         char msg[128];
 
         snprintf(msg, sizeof(msg), "Listening on %s\r\n", socket_path);
+        vt100_terminal_write(&terminal, msg);
+    }
+#endif
+
+    if (g_serial_port != NULL) {
+        char msg[128];
+
+        snprintf(msg, sizeof(msg), "Serial: %s @ %u 8N1\r\n",
+                 serial_device, (unsigned)serial_baud);
         vt100_terminal_write(&terminal, msg);
     }
 
@@ -376,6 +468,7 @@ int main(int argc, char *argv[])
             }
         }
 
+#ifndef _WIN32
         if (g_listen_fd >= 0 && g_client_fd < 0) {
             int fd = accept_client();
 
@@ -397,12 +490,27 @@ int main(int argc, char *argv[])
                 g_client_fd = -1;
             }
         }
+#endif
+
+        if (g_serial_port != NULL) {
+            uint8_t buf[512];
+            int n = serial_port_read(g_serial_port, buf, sizeof(buf));
+
+            if (n > 0) {
+                vt100_terminal_write_n(&terminal, (const char *)buf, (size_t)n);
+            } else if (n < 0) {
+                vt100_terminal_write(&terminal, "\r\n\x1b[31m[serial port error]\x1b[0m\r\n");
+                serial_port_close(g_serial_port);
+                g_serial_port = NULL;
+            }
+        }
 
         (void)vt100_terminal_getch(&terminal, -1);
         sdl2_lcd_present(drv);
         SDL_Delay(16);
     }
 
+#ifndef _WIN32
     if (g_client_fd >= 0) {
         close(g_client_fd);
     }
@@ -414,7 +522,9 @@ int main(int argc, char *argv[])
     if (g_socket_path != NULL) {
         unlink(g_socket_path);
     }
+#endif
 
+    serial_port_close(g_serial_port);
     lcd_destroy(drv);
     return 0;
 }
