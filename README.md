@@ -1,16 +1,16 @@
 # ILI9486L LCD library for Raspberry Pi Pico
 
-Библиотека для работы с LCD-дисплеем на контроллере ILI9486L. Включает абстрактный драйвер дисплея, baseline JPEG декодер, текстовый вывод и VT100-терминал.
+LCD display library for the ILI9486L controller. Includes an abstract display driver, baseline JPEG decoder, text rendering, and a VT100 terminal emulator.
 
-Архитектура библиотеки разделена на:
+The library architecture is split into:
 
-- **`lcd_driver_t`** — абстрактный интерфейс дисплея с vtable (подключение конкретного драйвера через линковку)
-- **ILI9486L** — аппаратный драйвер для Pico (SPI + DMA)
-- **SDL2** — программный драйвер для разработки и тестирования на хосте
-- **VT100 терминал** — работает поверх любого драйвера через `lcd_driver_t`
-- **JPEG** — baseline JPEG декодер, общий для всех платформ
+- **`lcd_driver_t`** — abstract display interface with a vtable (concrete driver selected at link time)
+- **ILI9486L** — hardware driver for Pico (SPI + DMA)
+- **SDL2** — software driver for host-side development and testing
+- **VT100 terminal** — runs on top of any driver via `lcd_driver_t`
+- **JPEG** — baseline JPEG decoder, shared across all platforms
 
-## Быстрый старт
+## Quick start
 
 ### Pico (ILI9486L)
 
@@ -49,7 +49,7 @@ int main(void)
 }
 ```
 
-Приложение вызывает `lcd_init()` и получает `lcd_driver_t *`. Какой именно драйвер стоит за этим указателем — определяется на этапе линковки. Прикладной код не включает заголовки конкретного драйвера.
+Application code calls `lcd_init()` and receives an `lcd_driver_t *`. Which driver backs this pointer is determined at link time. Application code does not include driver-specific headers.
 
 ### Host (SDL2)
 
@@ -60,65 +60,65 @@ cmake -B build-host \
 cmake --build build-host
 ```
 
-SDL2 окно эмулирует дисплей 480x320 с масштабом 2x. Тот же вызов `lcd_init()` создаёт SDL2-бэкенд.
+The SDL2 window emulates a 480x320 display at 2x scale. The same `lcd_init()` call creates the SDL2 backend.
 
-## Публичные заголовки
+## Public headers
 
-| Заголовок | Назначение |
+| Header | Purpose |
 | --- | --- |
-| `include/lcd_driver.h` | Абстрактный интерфейс дисплея, цвета, `lcd_init()` / `lcd_destroy()` |
-| `include/lcd_jpeg.h` | Baseline JPEG декодер |
-| `include/vt100_terminal.h` | VT100/ANSI/VT52 терминал |
+| `include/lcd_driver.h` | Abstract display interface, colors, `lcd_init()` / `lcd_destroy()` |
+| `include/lcd_jpeg.h` | Baseline JPEG decoder |
+| `include/vt100_terminal.h` | VT100/ANSI/VT52 terminal emulator |
 
-Внутренние заголовки (`src/lcd_text.h`, `src/drivers/*/`) не являются частью публичного API.
+Internal headers (`src/lcd_text.h`, `src/drivers/*/`) are not part of the public API.
 
-## API дисплея
+## Display API
 
-### Инициализация и размер
+### Initialization and size
 
 ```c
-lcd_driver_t *drv = lcd_init();       // инициализировать драйвер (определяется линковкой)
-lcd_destroy(drv);                      // освободить ресурсы (SDL2) / no-op (Pico)
+lcd_driver_t *drv = lcd_init();       // initialize the driver (determined at link time)
+lcd_destroy(drv);                      // release resources (SDL2) / no-op (Pico)
 
-uint16_t w = lcd_width(drv);           // текущая ширина (480 после rotation=1)
-uint16_t h = lcd_height(drv);          // текущая высота (320 после rotation=1)
-lcd_get_size(drv, &w, &h);            // то же, одним вызовом
+uint16_t w = lcd_width(drv);           // current width (480 with rotation=1)
+uint16_t h = lcd_height(drv);          // current height (320 with rotation=1)
+lcd_get_size(drv, &w, &h);            // same, in a single call
 ```
 
-Размер дисплея по умолчанию `480x320` (`LCD_DISPLAY_WIDTH` / `LCD_DISPLAY_HEIGHT`). Эти макросы можно переопределить через `target_compile_definitions()`.
+Default display size is `480x320` (`LCD_DISPLAY_WIDTH` / `LCD_DISPLAY_HEIGHT`). These macros can be overridden via `target_compile_definitions()`.
 
-### Примитивы рисования
+### Drawing primitives
 
 ```c
 lcd_fill_screen(drv, LCD_COLOR_BLACK);
 lcd_fill_rect(drv, x, y, w, h, LCD_COLOR_RED);
 ```
 
-### Streaming path (без framebuffer)
+### Streaming path (no framebuffer)
 
 ```c
 if (lcd_begin_write(drv, x, y, w, h)) {
-    lcd_write_pixels(drv, rgb666_wire_data, pixel_count);  // может быть async (DMA на Pico)
-    lcd_flush(drv);                                         // дождаться завершения
+    lcd_write_pixels(drv, rgb666_wire_data, pixel_count);  // may be async (DMA on Pico)
+    lcd_flush(drv);                                         // wait for completion
 }
 ```
 
-### Цвета
+### Colors
 
-Внутренний формат — `RGB666`. Каждый канал 6 бит.
+Internal format is `RGB666`. Each channel is 6 bits.
 
 ```c
-lcd_color_t color = LCD_RGB666(0x3F, 0x00, 0x00);  // красный (0x00..0x3F на канал)
+lcd_color_t color = LCD_RGB666(0x3F, 0x00, 0x00);  // red (0x00..0x3F per channel)
 
-// предопределённые:
+// predefined:
 LCD_COLOR_BLACK, LCD_COLOR_WHITE, LCD_COLOR_RED,
 LCD_COLOR_GREEN, LCD_COLOR_BLUE, LCD_COLOR_CYAN,
 LCD_COLOR_MAGENTA, LCD_COLOR_YELLOW
 ```
 
-### Текстовый вывод
+### Text rendering
 
-Текстовый вывод доступен через внутренний заголовок `lcd_text.h` (подключается из `src/`):
+Text rendering is available via the internal header `lcd_text.h` (located in `src/`):
 
 ```c
 #include "lcd_text.h"
@@ -127,9 +127,9 @@ lcd_draw_char(drv, x, y, 'A', LCD_COLOR_WHITE, LCD_COLOR_BLACK, 2);
 lcd_draw_string(drv, x, y, "HELLO", LCD_COLOR_WHITE, LCD_COLOR_BLACK, 2);
 ```
 
-Встроенный шрифт — `5x7` пикселей. Параметр `scale` задаёт масштаб.
+Built-in font is `5x7` pixels. The `scale` parameter sets the multiplier.
 
-Для использования `lcd_text.h` из своего приложения нужно добавить `src/` в include path:
+To use `lcd_text.h` from your application, add `src/` to the include path:
 
 ```cmake
 target_include_directories(my_app PRIVATE
@@ -151,20 +151,20 @@ if (lcd_jpeg_get_info(jpeg_data, jpeg_size, &info)) {
 lcd_jpeg_draw(drv, jpeg_data, jpeg_size, x, y);
 ```
 
-- Используется `TJpgDec`
-- Декодирование MCU-блоками без full-frame буфера
-- Входные данные читаются прямо из flash / ROM / `const uint8_t[]`
-- Только baseline JPEG (progressive не поддерживается)
-- `lcd_jpeg_draw()` вернёт `false`, если изображение не помещается в дисплей
+- Uses `TJpgDec`
+- MCU-block decoding without a full-frame buffer
+- Input data is read directly from flash / ROM / `const uint8_t[]`
+- Baseline JPEG only (progressive is not supported)
+- `lcd_jpeg_draw()` returns `false` if the image does not fit the display
 
-## VT100 терминал
+## VT100 terminal
 
-Терминал рассчитан на дисплей `480x320`:
+The terminal is designed for a `480x320` display:
 
-- `80` колонок, `35` строк
-- ячейка `6x9`, глиф `5x7`
+- `80` columns, `35` rows
+- cell size `6x9`, glyph size `5x7`
 
-### Инициализация
+### Initialization
 
 ```c
 #include "lcd_driver.h"
@@ -176,56 +176,56 @@ lcd_driver_t *drv = lcd_init();
 vt100_terminal_init(&terminal, drv, origin_x, origin_y);
 ```
 
-`vt100_terminal_init()` сразу очищает и рисует область терминала, поэтому вызывать его нужно после `lcd_init()`.
+`vt100_terminal_init()` immediately clears and draws the terminal area, so it must be called after `lcd_init()`.
 
-### Потоки данных
+### Data flow
 
-Два пути подачи данных:
+Two data paths:
 
-- **`vt100_terminal_putc()` / `vt100_terminal_write()`** — прямой путь данных в terminal parser (для потока от удалённого хоста)
-- **`vt100_terminal_getch()`** — путь локального пользовательского ввода, проходит через встроенные команды и optional hook перед terminal parser
+- **`vt100_terminal_putc()` / `vt100_terminal_write()`** — direct data path into the terminal parser (for a stream from a remote host)
+- **`vt100_terminal_getch()`** — local user input path, passes through built-in commands and an optional hook before the terminal parser
 
-### Ответы терминала
+### Terminal responses
 
-Если хост ожидает ответы (`DA`, `DSR`):
+If the host expects responses (`DA`, `DSR`):
 
 ```c
 vt100_terminal_set_output(&terminal, my_output_fn, NULL);
 ```
 
-### Обновление состояния
+### State update
 
 ```c
-vt100_terminal_tick(&terminal, elapsed_ms);  // blink и служебные таймеры
+vt100_terminal_tick(&terminal, elapsed_ms);  // blink and housekeeping timers
 ```
 
-### Встроенная terminal UI
+### Built-in terminal UI
 
-Активируется через `vt100_terminal_getch()`:
+Activated via `vt100_terminal_getch()`:
 
-- последняя строка резервируется под status line
-- `Ctrl+E` — войти в режим локальной команды
-- `Ctrl+E 1/2/3` — переключить `80x34` / `80x30` / `80x24`
-- `Ctrl+E s/p` — переключить `SCROLL` / `PAGED`
-- в `PAGED` режиме отправляются `XOFF`/`XON` через output callback
+- the last row is reserved for a status line
+- `Ctrl+E` — enter local command mode
+- `Ctrl+E 1/2/3` — switch to `80x34` / `80x30` / `80x24`
+- `Ctrl+E s/p` — switch `SCROLL` / `PAGED` mode
+- in `PAGED` mode, `XOFF`/`XON` are sent via the output callback
 
-### Локальный hook
+### Local hook
 
 ```c
 static bool my_hook(vt100_terminal_t *terminal, char ch, void *user_data)
 {
     if ((unsigned char)ch == 0x0C) {
-        // обработать локально
-        return true;   // не передавать в parser
+        // handle locally
+        return true;   // do not pass to parser
     }
 
-    return false;      // передать дальше
+    return false;      // pass through
 }
 
 vt100_terminal_set_getch_hook(&terminal, my_hook, NULL);
 ```
 
-### Минимальный пример терминала
+### Minimal terminal example
 
 ```c
 #include "lcd_driver.h"
@@ -273,7 +273,7 @@ int main(void)
 }
 ```
 
-## Сборка
+## Building
 
 ### Pico (standalone)
 
@@ -282,9 +282,9 @@ cmake -S . -B build
 cmake --build build -j4
 ```
 
-Артефакты: `build/demo/ili9486l_lcd_demo.elf`, `.uf2`
+Artifacts: `build/demo/ili9486l_lcd_demo.elf`, `.uf2`
 
-Для Pico 2:
+For Pico 2:
 
 ```bash
 cmake -S . -B build-pico2 -DPICO_BOARD=pico2
@@ -293,7 +293,7 @@ cmake --build build-pico2 -j4
 
 ### Pico (submodule)
 
-Если Pico SDK уже инициализирован в родительском проекте:
+If the Pico SDK is already initialized in a parent project:
 
 ```cmake
 set(ILI9486L_LCD_BUILD_DEMO OFF CACHE BOOL "" FORCE)
@@ -311,7 +311,7 @@ cmake --build build-host
 ./build-host/demo/lcd_demo_sdl2
 ```
 
-### Тесты
+### Tests
 
 ```bash
 cmake -S tests/host -B build-tests
@@ -319,13 +319,13 @@ cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure
 ```
 
-Тесты не требуют Pico SDK, SDL2 или железа.
+Tests do not require the Pico SDK, SDL2, or hardware.
 
-## Подключение дисплея
+## Display wiring
 
-Пины по умолчанию:
+Default pin assignments:
 
-| Дисплей | RP2040 |
+| Display | RP2040 |
 | --- | --- |
 | `CLK` | `GP14` |
 | `MOSI` | `GP15` |
@@ -335,9 +335,9 @@ ctest --test-dir build-tests --output-on-failure
 | `VCC` | `3V3(OUT)` |
 | `BLK` | `3V3(OUT)` |
 
-`CS` не используется — предполагается, что модуль постоянно выбран на SPI-шине.
+`CS` is not used — the module is assumed to be permanently selected on the SPI bus.
 
-Переопределение пинов и SPI:
+Pin and SPI overrides:
 
 ```cmake
 target_compile_definitions(ili9486l_lcd PRIVATE
@@ -351,18 +351,18 @@ target_compile_definitions(ili9486l_lcd PRIVATE
 )
 ```
 
-## CMake-опции
+## CMake options
 
-| Опция | Умолчание | Назначение |
+| Option | Default | Purpose |
 | --- | --- | --- |
-| `ILI9486L_LCD_HOST_BUILD` | `OFF` | Форсировать host-сборку (без Pico SDK) |
-| `ILI9486L_LCD_BUILD_DEMO` | `ON` (standalone) | Собрать demo app |
-| `ILI9486L_LCD_ENABLE_DEMO_STDIO_USB` | `ON` | USB CDC для demo |
-| `ILI9486L_LCD_ENABLE_DEMO_STDIO_UART` | `ON` | UART stdio для demo |
-| `ILI9486L_LCD_DEMO_RUN_FPS_TEST` | `ON` | Benchmark при старте demo |
-| `ILI9486L_LCD_DEMO_LOGO_PATH` | `demo/assets/logo.jpg` | Путь к JPEG для boot logo |
+| `ILI9486L_LCD_HOST_BUILD` | `OFF` | Force host build (without Pico SDK) |
+| `ILI9486L_LCD_BUILD_DEMO` | `ON` (standalone) | Build the demo app |
+| `ILI9486L_LCD_ENABLE_DEMO_STDIO_USB` | `ON` | USB CDC for demo |
+| `ILI9486L_LCD_ENABLE_DEMO_STDIO_UART` | `ON` | UART stdio for demo |
+| `ILI9486L_LCD_DEMO_RUN_FPS_TEST` | `ON` | Run benchmark at demo startup |
+| `ILI9486L_LCD_DEMO_LOGO_PATH` | `demo/assets/logo.jpg` | JPEG path for boot logo |
 
-## Подготовка boot logo
+## Preparing a boot logo
 
 ```bash
 python3 -m pip install Pillow
@@ -370,11 +370,11 @@ python3 demo/tools/png_to_logo.py logo.png
 python3 demo/tools/png_to_logo.py logo.png --rotate cw
 ```
 
-Результат положить в `demo/assets/logo.jpg`.
+Place the result in `demo/assets/logo.jpg`.
 
-## Ограничения
+## Limitations
 
-- Публичный шрифтовой API не экспортируется: встроенный `5x7` используется только внутренне
-- UTF-8 и scrollback в терминале не реализованы
-- Только baseline JPEG
-- Порядок цветов настроен как BGR (корректен для текущего модуля)
+- The font API is not exported publicly: the built-in `5x7` font is used internally only
+- UTF-8 and scrollback are not implemented in the terminal
+- Baseline JPEG only
+- Color order is configured as BGR (correct for the current display module)
