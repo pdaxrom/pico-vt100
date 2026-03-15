@@ -50,7 +50,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Common sources (shared between Pico and host builds) ---
 set(ILI9486L_LCD_COMMON_SOURCES
-  src/font5x7.c
   src/font5x7_row_masks.c
   src/lcd_text.c
   src/lcd_jpeg.c

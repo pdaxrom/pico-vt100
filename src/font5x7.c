@@ -1,10 +1,15 @@
-#include "font5x7.h"
-
 /*
- * ASCII 0x20..0x7f, sourced from:
- * https://raw.githubusercontent.com/andygock/glcd/refs/heads/master/fonts/font5x7.h
+ * Original column-format 5x7 font data.
+ * Not linked into the library — kept only as the source for generating
+ * k_font5x7_cell6x9_row_masks in font5x7_row_masks.c.
  */
-const uint8_t Font5x7[(FONT5X7_LAST_CHAR - FONT5X7_FIRST_CHAR + 1u) * FONT5X7_WIDTH] = {
+#include <stdint.h>
+
+#define FONT5X7_WIDTH      5u
+#define FONT5X7_FIRST_CHAR 0x20u
+#define FONT5X7_LAST_CHAR  0x7Fu
+
+static const uint8_t Font5x7[(FONT5X7_LAST_CHAR - FONT5X7_FIRST_CHAR + 1u) * FONT5X7_WIDTH] = {
     0x00, 0x00, 0x00, 0x00, 0x00, /* space */
     0x00, 0x00, 0x5F, 0x00, 0x00, /* ! */
     0x00, 0x07, 0x00, 0x07, 0x00, /* " */
@@ -103,7 +108,7 @@ const uint8_t Font5x7[(FONT5X7_LAST_CHAR - FONT5X7_FIRST_CHAR + 1u) * FONT5X7_WI
     0x08, 0x1C, 0x2A, 0x08, 0x08, /* <- */
 };
 
-const uint8_t *font5x7_get_glyph(char c)
+static const uint8_t *font5x7_get_glyph(char c)
 {
     uint8_t code = (uint8_t)c;
 

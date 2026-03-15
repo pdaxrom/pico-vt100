@@ -7,15 +7,15 @@
 static void lcd_draw_char_slow(lcd_driver_t *drv, uint16_t x, uint16_t y, char c, lcd_color_t fg, lcd_color_t bg,
                                uint8_t scale)
 {
-    const uint8_t *glyph = font5x7_get_glyph(c);
+    const uint8_t *glyph_rows = font5x7_get_cell6x9_row_masks(c);
 
-    lcd_fill_rect(drv, x, y, (uint16_t)(6u * scale), (uint16_t)(8u * scale), bg);
+    lcd_fill_rect(drv, x, y, (uint16_t)(6u * scale), (uint16_t)(FONT5X7_CELL6X9_HEIGHT * scale), bg);
 
-    for (uint8_t col = 0; col < FONT5X7_WIDTH; ++col) {
-        const uint8_t column_bits = glyph[col];
+    for (uint8_t row = 0; row < FONT5X7_CELL6X9_HEIGHT; ++row) {
+        const uint8_t row_mask = glyph_rows[row];
 
-        for (uint8_t row = 0; row < FONT5X7_HEIGHT; ++row) {
-            if ((column_bits & (1u << row)) != 0u) {
+        for (uint8_t col = 0; col < 6u; ++col) {
+            if ((row_mask & (1u << col)) != 0u) {
                 lcd_fill_rect(drv, (uint16_t)(x + col * scale), (uint16_t)(y + row * scale), scale, scale, fg);
             }
         }
@@ -26,7 +26,7 @@ void lcd_draw_char(lcd_driver_t *drv, uint16_t x, uint16_t y, char c, lcd_color_
 {
     const uint8_t *glyph_rows;
     const uint16_t glyph_w = (uint16_t)(6u * scale);
-    const uint16_t glyph_h = (uint16_t)(8u * scale);
+    const uint16_t glyph_h = (uint16_t)(FONT5X7_CELL6X9_HEIGHT * scale);
     uint8_t row_pixels[6u * LCD_TEXT_FAST_SCALE_MAX * 3u];
     uint8_t fg_wire[3];
     uint8_t bg_wire[3];
@@ -35,7 +35,7 @@ void lcd_draw_char(lcd_driver_t *drv, uint16_t x, uint16_t y, char c, lcd_color_
         return;
     }
 
-    glyph_rows = font5x7_get_cell6x8_row_masks(c);
+    glyph_rows = font5x7_get_cell6x9_row_masks(c);
     if (scale > LCD_TEXT_FAST_SCALE_MAX || (uint32_t)x + glyph_w > lcd_width(drv) ||
         (uint32_t)y + glyph_h > lcd_height(drv)) {
         lcd_draw_char_slow(drv, x, y, c, fg, bg, scale);
@@ -49,7 +49,7 @@ void lcd_draw_char(lcd_driver_t *drv, uint16_t x, uint16_t y, char c, lcd_color_
         return;
     }
 
-    for (uint8_t glyph_row = 0; glyph_row < 8u; ++glyph_row) {
+    for (uint8_t glyph_row = 0; glyph_row < FONT5X7_CELL6X9_HEIGHT; ++glyph_row) {
         const uint8_t row_mask = glyph_rows[glyph_row];
 
         for (uint8_t sy = 0; sy < scale; ++sy) {
@@ -79,7 +79,7 @@ void lcd_draw_string(lcd_driver_t *drv, uint16_t x, uint16_t y, const char *text
 {
     const uint16_t start_x = x;
     const uint16_t advance_x = (uint16_t)(6u * scale);
-    const uint16_t advance_y = (uint16_t)(8u * scale);
+    const uint16_t advance_y = (uint16_t)(FONT5X7_CELL6X9_HEIGHT * scale);
 
     if (text == NULL || scale == 0) {
         return;
